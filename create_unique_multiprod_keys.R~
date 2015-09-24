@@ -1,0 +1,23 @@
+setwd("/Users/Yoni/Documents/ZhangLab")
+
+library(xlsx)
+library(dplyr)
+library(plyr)
+
+# source("R/insect_dict_helper_funs.R")
+# source("R/export_helper_funs.R")
+dat <- read.csv("ExcelData/Data-allCpyr-withAI-csv.csv",
+                stringsAsFactors = FALSE,
+                header = TRUE)
+
+keyHash <- new.env()
+
+
+tmp <- dat %>%
+    dplyr::group_by(PDF.file.name, Source..Fig.or.Table.number.) %>%
+    dplyr::summarise(
+        m_prods = paste(unique(Multiple.product.numbers), collapse = ", " )
+        )
+
+d_ply(dat, .(PDF.file.name, Source..Fig.or.Table.number))
+

@@ -1,0 +1,18 @@
+############################################################
+## Helper functions for massaging data (in general?)      ##
+############################################################
+
+mf <- new.env()
+setwd("/Users/Yoni/Documents/ZhangLab")
+source("R/helper_functions.R")
+
+## calculate the percentage of values in a column against
+## some defined baseline. Must give text names.
+mf$calcPercent <- function(.data, baseName, baseColumn, valueColumn){
+    val <- .data[[valueColumn]][which(.data[[baseColumn]] == baseName)]
+    data.frame(.data, PercControl = .data[[valueColumn]] / val)
+}
+
+
+############################################################
+############################################################

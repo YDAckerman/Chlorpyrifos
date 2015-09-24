@@ -1,0 +1,46 @@
+## Helper functions for importing data from our excel files:
+
+## find all the words two strings share (useful for finding
+## the right row in the excel file using insect name):
+stringIntersect <- function(s1, s2){
+    s <- strsplit(gsub("[^[:alnum:] ]", "", c(s1,s2)), " +")
+    intersect(s[[1]], s[[2]])
+}
+
+## given the correct file, find the indices of the raw block of data
+## corresponding to the pdfname
+getBlockRange <- function(file, pdfname){
+    ## first occurrance of the pdf's name:
+    block_b <- pdf_locs_in_files[[names(file)]][[pdfname]]
+    ## find end of block by looking at the next highest pdf name
+    ## occurrance:
+    further_blocks <- na.omit(which(pdf_locs_in_files[[names(file)]] > block_b))
+    block_e <- min(unlist(pdf_locs_in_files[[names(file)]][further_blocks])) - 1
+    block_b:block_e
+}
+
+## given the correct block, find the indices of the table
+## corresponding to the tbl_indicator
+getTableRange <- function(file, tbl_indicator, block_range){
+    all_tbl_locs <- grep("table", file[[1]], ignore.case = TRUE)
+    tbl_locs <- intersect(all_tbl_locs, block_range)
+    potential_tbl_locs <- grep(tbl_indicator, file[[1]], ignore.case = TRUE)
+    tbl_b <- intersect(tbl_locs, potential_tbl_locs)
+    tbl_e <- min(all_tbl_locs[which(tbl_locs > tbl_b)]) - 1
+    if (is.infinite(tbl_e)){
+        tbl_e <- max(block_range)
+    }
+    tbl_b:tbl_e
+}
+
+getTableContentRanges <- function(file, tbl_range){
+    ## find occurences of the word 'treatment'
+    all_data_starts <- grep("treatment", file[[1]], ignore.case = TRUE)
+    data_starts <- intersect(tbl_range, all_data_starts)
+    ## and all occurence of the 'utc' word
+    all_data_ends <- mgrep(c("untreated", "check", "utc", "control"),
+                           file[[1]],
+                           ignore.case = TRUE)
+    data_ends <- intersect(tbl_range, all_data_ends)
+    as.data.frame(rbind(data_starts, data_ends))
+}

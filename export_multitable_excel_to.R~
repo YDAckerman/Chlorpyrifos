@@ -1,0 +1,11 @@
+## Workflow to bring data from an excel file with multiple tables to R
+## given a line in the CPYR dataset, I want to be able to locate and
+## extract the raw insect data that corresponds to it into a df.
+
+
+inputfile <- "/Users/Yoni/Documents/ZhangLab/ExcelData/Data-Cpyr-Oct2014-Raw.csv"
+con <- file(inputfile, open = "r")
+lines <- readLines(con)
+
+## can read segments of xlsx:
+f <- read.xlsx("/Users/Yoni/Documents/ZhangLab/ExcelData/Data-Cpyr-Oct2014-Raw.xlsx", sheetIndex = 1, startRow = 4, endRow = 28)

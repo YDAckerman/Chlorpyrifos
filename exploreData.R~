@@ -1,0 +1,27 @@
+############################################################
+##       workflow to assemble and massage data            ##
+############################################################
+
+
+##____________set__working__ directory____________________##
+
+setwd("/Users/Yoni/Documents/ZhangLab")
+
+##_________________set__options___________________________##
+
+options(dplyr.width = Inf)
+
+##__________source:__data__dicts__functions_______________##
+
+source("R/create_pest_name_dict.R")
+## Gives: pestDict
+source("R/export_multitable_excel_to.R")
+## Gives: response_tables_lookup & response_tables
+source("R/massage_functions.R")
+## Gives: environment mf
+source("R/table_operations.R")
+## Gives: environment to
+source("R/create_unique_multiprod_keys.R")
+## Gives: addMultiProdKeysToData
+
+##_______________________workflow_________________________##

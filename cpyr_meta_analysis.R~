@@ -1,0 +1,81 @@
+############################################################
+##          documentation of Meta-analysis                ##
+############################################################
+
+##____________________Libraries___________________________##
+
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(gridExtra)
+library(lme4)
+
+##_______________set working directory____________________##
+
+setwd("/Users/Yoni/Documents/ZhangLab")
+
+##__________________set options___________________________##
+
+options(dplyr.width = Inf)
+
+##_____________source: data dicts functions_______________##
+
+source("R/assemble_&_massage_data.R")
+## Gives: dat, ins_table, response_tables,
+## & response_tables_lookup
+source("R/helper_functions.R")
+## Gives: hf (helper functions)
+source("R/table_operations.R")
+## Gives: to (table operations)
+
+##______________________Intro_____________________________##
+## We have amassed data from 114 pesticide efficacy studies in
+## order to quantify and compare efficacy of individual
+## active ingredients. The studies took
+## place across 12 states (CA, AR, OK, TX, OH, KS, WA, AZ, MD,
+## LA, FL, and VA) and together
+## tested approximately 354 different products, which themselves
+## used a combination of 1, 2, or 3 different active
+## ingredients out of 141 total tested.
+
+## The variation in effect between active ingredients
+## is now our main interest, however measuring it is not straightforward.
+## In order to compare trial's effects across trials and across studies, we
+## needed a way to quantify in a single number the effectiveness of that trial.
+## Towards this goal, we first calculated insect days, or the area
+## under the study-long curve of insect density. We could then divide each
+## trial's insect-day count by that of the experimental control, giving us a
+## ratio describing the percent decrease in insect days in the trial versus
+## the control. Finally, in order to achieve some degree of distributional
+## normality, we took the natural log of this ratio. In our final effect,
+## negative values suggest a trail that reduced the overall insect-day count,
+## a value of 0 means there was no difference between that trial and the control,
+## and a positive value means that trial experience more insect-days than the
+## control.
+
+## Of the 114 studies, 73 contained the necessary information to calculate
+## 'insect days', and hence the overall effect, for each pesticide trial. 
+
+## Furthermore, variation in this sample effect
+## is complicated by variations in: the pest targeted (of 53 species);
+## the rate at which the pesticide was applied; the adjuvant/surfactant
+## combined with the pesticide; the location of the trial to name a few.
+## In addition, study quality is a potentially confounding factor.
+## Of the individual experiments reported (176),
+## 44 did not report a measure of standard
+## error, 8 reported an SEM, and 124 reported statistical groups from which we
+## could deduce a lower and/or upper bound of the SEM. These we will use to
+## form weights in our anova (or, should we include rate as a variable,
+## regression).
+
+## We are also exploring other measures of study quality based on our knowledge
+## of the experiments structure. These include measuring the slope of the insect
+## density curve in the experiment's control, the variation in the control, and the
+## sample size (when given) of each experiment.
+## We hope these statistics will paint a picture  
+
+ins_table %>%
+    group_by(V1) %>%
+    dplyr::summarise( Em =
+              (!all(is.na(stdEr_UB)) | !all(is.na(stdEr_LB)) & all(is.na(insectDaysSEM)))) %>% dplyr::summarise(count = sum(Em))
+

@@ -1,0 +1,8 @@
+## script to build pest name dictionary
+
+## pull dataframe into R
+setwd(paste0(getwd(), "/ExcelData/"))
+dat <- read.csv("Data-allCpyr-withAI-csv.csv", stringsAsFactors = FALSE)
+
+## pull individual pests into vec: (what a col name...)
+pests <- a$Pest..as..common.name..scientific.name...if.both.given..if.not.just.enter.which.is.stated.in.article.
