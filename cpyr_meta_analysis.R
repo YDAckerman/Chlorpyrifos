@@ -11,10 +11,11 @@ library(gridExtra)
 library(lme4)
 library(MCMCglmm)
 library(orthopolynom)
+library(stringr)
 
 ##_______________set working directory____________________##
 
-setwd("/Users/Yoni/Documents/ZhangLab")
+##setwd("/Users/Yoni/Documents/ZhangLab")
 
 ##__________________set options___________________________##
 
@@ -23,13 +24,12 @@ options(dplyr.width = Inf)
 ##_____________source: data dicts functions_______________##
 
 #source("R/assemble_&_massage_data.R")
-
-load("cpyrMAdata.rda")
+load("~/Dropbox/ZhangLabData/cpyrMAdata.rda")
 ## Gives: dat, ins_table, response_tables,
 ## & response_tables_lookup
-source("R/helper_functions.R")
+source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 ## Gives: hf (helper functions)
-source("R/table_operations.R")
+source("~/Documents/ZhangLab/R/Chlorpyrifos/table_operations.R")
 ## Gives: to (table operations)
 
 ##______________________Intro_____________________________##
@@ -136,11 +136,24 @@ tmp$AI_s <- unname(unlist(b))
 ## let's quickly look at which location, ai, pest triples will
 ## be appropriate for meta-analysis:
 
-print.data.frame(tmp %>%
-                 dplyr::group_by(Pest, AI_s) %>%
-                 dplyr::summarise(count1 = n(),
-                                  count2 = length(unique(V1))) %>%
-                 dplyr::arrange(desc(count1)))
+b <- tmp %>%
+    dplyr::group_by(Pest, AI_s) %>%
+    dplyr::summarise(count1 = n()) %>%
+    ##ungroup() %>%
+    dplyr::arrange(desc(count1))
+
+print.data.frame(b)
+
+## the above table indicates that AC, AW, BAA, BAW, and
+## PA are all appropriate for MA (So long as we filter
+## by count1 >= 10). This gives:
+b <- b %>% filter(count1 >= 10 & Pest %in% c("AC", "AW", "BAA", "BAW", "PA"))
+
+tmp <- semi_join(tmp, b, by = c("Pest", "AI_s"))
+
+################################################################################
+################################################################################
+
 
 ## tmp <- merge(tmp, a, by = "Pest")
 
@@ -202,8 +215,8 @@ print.data.frame(tmp %>%
 
 ## use qq plots to determine if normal distribution is appropriate
 
-do.call(grid.arrange, llply(a$AI1, function(ingredient){
-    g <- tmp %>% filter(AI1 == ingredient)
+do.call(grid.arrange, llply(unique(b$AI_s), function(ingredient){
+    g <- tmp %>% filter(AI_s == ingredient)
     ## ggplot(g, aes(x = LnR)) + geom_density() + ggtitle(ingredient)
     ggplot(g, aes(sample = LnR)) + stat_qq() + ggtitle(ingredient)
 }))
@@ -406,17 +419,17 @@ dsetsLMER <- llply(unique(tmp$Pest), failwith(NA , function(pest){
     ## use a random coefficient for rate, random intercepts for V1
     ## and PDF, and a fixed effect for AI:
     print(pest)
-    print(tmp_pest %>% group_by(AI) %>% dplyr::summarise(cnt = n()))
+    print(tmp_pest %>% group_by(AI_s) %>% dplyr::summarise(cnt = n()))
     ##stop()
     lmerMod <- glmer(LnR1 ~
-                    (Rate - 1| AI) +
+                    ##(Rate - 1| AI) +
                     (1 | V1) +
-                    (1 | PDF.file.name) +
-                    AI - 1,
+                    ##(1 | PDF.file.name) +
+                    AI_s - 1,
                     tmp_pest)
     means <- fixef(lmerMod)
     intervals <- (confint(lmerMod, method = "boot"))[names(means),]
-    testd <- data.frame(AI = gsub("AI", "", names(means)),
+    testd <- data.frame(AI= gsub("AI_s", "", names(means)),
                post.mean = means,
                intervals,
                Pest = pest)
@@ -424,11 +437,17 @@ dsetsLMER <- llply(unique(tmp$Pest), failwith(NA , function(pest){
     testd
 }), .progress = "text")
 
-grobs <- llply(dsetsMCMC, failwith(NA, function(c_d){
+grobs <- llply(dsetsLMER, failwith(NA, function(c_d){
     if(class(c_d) != "data.frame"){ return(NULL) }
     ##stop()
     pest <-  unique(c_d$Pest)
-    ggplot(c_d, aes(x = substr(AI, 1, 6), y = post.mean)) +
+    c_d$AI_s <- unlist(
+        llply(c_d$AI,
+              function(x) paste(str_sub(x, c(1,-2), c(6,-1)), collapse = "")))
+    ##print(c_d$AI_s)
+    c_d <- c_d %>% arrange(post.mean)
+    c_d$AI_s <- factor(c_d$AI_s, levels = c("chlorp-s", setdiff(c_d$AI_s, "chlorp-s")))
+    ggplot(c_d, aes(x = AI_s, y = post.mean)) +
         geom_point() +
             geom_pointrange(aes(ymax = upper, ymin = lower)) +
                 theme(axis.text.x = element_text(angle = 90, hjust = 0)) +
@@ -436,7 +455,7 @@ grobs <- llply(dsetsMCMC, failwith(NA, function(c_d){
                     ggtitle(pest)
 }))
 
-g <- do.call(arrangeGrob, grobs[c(1:7, 9:10)])
+g <- do.call(arrangeGrob, grobs) ##[c(1:7, 9:10)]
 
 ##_____________________Changes_________________________##
 ##               Due to the choice of                  ##
