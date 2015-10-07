@@ -1,0 +1,116 @@
+---
+title: "Chlorpyrifos Meta Analysis"
+author: "Yoni Ackerman"
+output: html_document
+---
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, eval = TRUE}
+source("~/Documents/ZhangLab/R/Chlorpyrifos/cpyr_final_analysis.R")
+```
+
+The Data Set
+--------------------------------------------------------------------------------
+
+Data was derived from 157 unique studies.
+Each study was comprised of at least one experiment in which some number of
+chlorpyrifos formulations were tested against one another and / or some other
+active ingredient / formulation. Of these experiments, 255 proved unique and
+appropriate to our analysis. The criterion by which we selected experiments were:
+
+* at least 1 chlorpyrifos treatment was tested
+* at least 1 alternative treatment was tested
+* an untreated control was used
+* the reported response had to be at least two numeric measurements of insect
+density, sampled on different days
+
+These 255 experiments yielded 2823 data points, each describing the change in
+insect density after the application of their respective treatments. In the case
+that multiple applications were made before measurements were taken, we summed the
+amounts to find a total mass of AI applied. In the case that multiple AI's were
+applied, either by using multiple products or a single product containing multiple
+AI's, we gave each AI a row in the data set and connected it to all other other AI's
+used in the same sample via a unique multi-product key. From here, we went on to
+calculate the test statistic for each sample. This first involved calculating
+the area below the insect density curve: $$ \text{id}_i = \sum_{k = 1}^{N_i}\frac{\text{meas}_{ik} +
+\text{meas}_{i(k+1)}}{2(\text{jd}_{i(k+1)} - \text{jd}_{ik})} $$ Where $i$ is the index of the sample,
+$N_i$ is the number of different measurements the sample made, $\text{meas}_{ik}$ is the
+$k$th insect density measurment of that sample and $\text{jd}_{ik}$ is the julian date of
+that measurement. We then calculated the test statistic as:
+
+$$ \text{d}_i = ln(\frac{\text{id}_i + 1}{\text{id}_{i}^{utc}}) $$
+
+Where $\text{id}_{i}^{utc}$ is the insect day value of the untreated control from the
+experiment containing sample $i$. We added 1 to the numerator so as to avoid taking the
+natural log of zero. This estimate introduces its own problems, in particular that
+it treats fractions like $\frac{1}{5}$ and $\frac{100}{500}$ as equivalent. To address
+this and other issues we constrained our dataset further by only retaining
+a data point if:
+
+* it measured the effect of a single AI
+* measurements of the insect population in question went on no longer than 50 days
+($N_i < 50$ $\forall i$)
+* it gave a measurement of sample error, either numerically or by noting statistical groups
+* the untreated control from its experiment had an insect day value greater than 100
+
+In the data collection phase of this project, we did not filter out studies or experiments
+based on insect type. We did not feel comfortable assuming, however, that experiments done on
+different insect species were comparable. Thus, in order to go through with our analysis,
+we could only keep data points if there were enough other data points that shared the same
+insect species. We chose to use a ten data-point minimum as our threshold.
+
+Before we could begin our analysis, however, we had one more structural problem to solve.
+Our analysis was intended to gauge the efficacy of alternative AI's against Chlorpyrifos.
+Every treatment in our data set, however, was not merely definied by the AI used, but also
+by the specific formulation of that AI. Thus, we needed a way to
+incorporate this additional variable into our analysis without undermining our focus on
+testing individual AI's.
+
+We addressed this problem by following the method layed out in Belova et al 2013. We divided
+each AI into three categories based on msds recommendations: those applied below the recommended
+range of useage (labelled $l$); those within the recommended range of usage (labelled $s$); and
+those above the recommended range ($h$). We then considered each category within a single AI group
+as a distinct treatment type. Thus instead of treaments like .01 lbs Chlorpyrifos used, 2 lbs
+Chlorpyrifos used, .15 lbs Chlorpyrifos used, etc. we had only Chlorpyrifos-l, Chlorpyrifos-s, and
+Chlorpyrifos-h.
+
+This last alteration left us with our final dataset:
+
+```{r, echo = FALSE, eval = TRUE}
+tmp %>% group_by(Pest) %>% dplyr::summarise(
+rows = n(),
+experiments = length(unique(V1)),
+treatments = length(unique(AI_s))
+)
+```
+
+Standard Error of Measurements
+--------------------------------------------------------------------------------
+Calculating the SEM for our data was necessary as numerical measure of error were
+not always reported. Instead, many studies employed statistical
+groups as a way of representing the statistical difference between measurements.
+Using methods from Knapp et. el 2009, we were able to extrapolate upper and
+lower bounds on the SEM for the samples of such studies. 
+
+The Analysis
+--------------------------------------------------------------------------------
+We made use of two statistical methods in our analysis: Monte Carlo Markov Chain
+(MCMC) and Linear Mixed Effect Model (LMER) regressions. The use of either method
+alone would likely have sufficed, however, the event of confirmation or conflict
+between the methods seemed worth investigating. Both methods were used to
+test the following model:
+$$ \text{d}_{ij} \sim \text{Normal}(\mu_{ij}, \sigma_i) $$
+$$ \mu_{ij} = \alpha + \alpha_j + \beta\text{x}_{ij} $$
+$$ \alpha_{j} \sim \text{Normal}(0, \sigma_{j}) $$
+Where $\text{d}_{ij}$ is the test statistic of sample $i$ of experiment $j$
+and $\text{x}_{ij}$ is the categorical variable describing the AI used in sample
+$i$ of experiment $j$. And where $\alpha_{j}$ is a sample drawn from the estimate
+of the distribution of the effect of a data sample being in experiment $j$.
+This random effect is a standard way of attempting to statistically account for
+the variety of ways studies used in a meta analysis might differ (such as location,
+weather, research habits, etc.).
+
+The Results
+--------------------------------------------------------------------------------
+```{r, echo = FALSE, fig.width = 16, fig.height = 12, eval = TRUE}
+do.call(grid.arrange, grobs_weighted)
+```
