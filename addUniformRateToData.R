@@ -3,12 +3,12 @@ library(plyr)
 library(stringdist)
 library(chron)
 
-source("~/Documents/ZhangLab/R/helper_functions.R")
-source("~/Documents/ZhangLab/R/massage_functions.R")
+source("~/Documents/Coding/R/R_convenience/helper_functions.R")
+source("~/Documents/ZhangLab/R/Chlorpyrifos/massage_functions.R")
 
-files = list("~/Documents/ZhangLab/ExcelData/Data-allCpyr-withAI.csv",
-        "~/Documents/ZhangLab/ExcelData/Data-Cpyr-May2015-Mike.csv",
-        "~/Documents/ZhangLab/ExcelData/Data-Cpyr-Oct2014-Jess.csv")
+files = list("~/Dropbox/ZhangLabData/ExcelData/Data-allCpyr-withAI.csv",
+        "~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-Mike.csv",
+        "~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Jess.csv")
 
 dat <- llply(files, function(file){
     d <- read.csv(file,
@@ -46,7 +46,7 @@ dat <- llply(files, function(file){
 
 ## now go on abound and do further searching... Saved results as prodInfo.rda
 
-load("~/Documents/ZhangLab/R/prodInfo.rda")
+load("~/Dropbox/ZhangLabData/prodInfo.rda")
 
 ## the number after the product name can be one of two things: part of the name or an indication of
 ## the amount of active ingredient in the product. To deal with this, in stead of doing string matching
@@ -81,7 +81,7 @@ completed_cases <- prods %>% filter(check == "z")
 ## write.csv(guesses, file = "guesses.csv")
 
 ## I had to do a  lot of editing by hand...
-incomplete_cases <- read.csv(file = "~/Documents/ZhangLab/prod_guesses.csv",
+incomplete_cases <- read.csv(file = "~/Dropbox/ZhangLabData/prod_guesses.csv",
                              header = TRUE, na.strings = c("NA", "Err:512")) %>%
     select(original, best_guess)
 
@@ -121,7 +121,7 @@ incomplete_cases <- ldply(1:nrow(incomplete_cases), function(i){
     } else {
         guesses <- guesses[which.max(last_updates),] %>% select(density, prodno)
     }
-    ## now out put the right info
+    ## now output the right info
     ##
     return(data.frame(row, guesses, stringsAsFactors = FALSE))
 })
@@ -137,22 +137,27 @@ incomplete_cases <- incomplete_cases %>%
                   product_name = best_guess)
 
 completed_cases <- ldply(1:nrow(completed_cases), function(i){
+
+    i <- 9
     row <- completed_cases[i,]
     original <- row$original
     product_name <- row$product_name
+    
     if(is.na(original) | is.na(product_name)){
         return(data.frame(row, Density = NA, Active.Ingredient..AI. = NA, AI.. = NA))
     }
+    
     guesses <- dat[[1]] %>%
         mutate(Pesticide.commercial.name = hf$trim(Pesticide.commercial.name),
                Active.Ingredient..AI. = tolower(Active.Ingredient..AI.)) %>%
                    filter(Pesticide.commercial.name == product_name)
     guesses <- guesses %>%
         dplyr::distinct(Density, Active.Ingredient..AI., AI..) %>%
-            dplyr::select(Density,Active.Ingredient..AI.,AI..)
+        dplyr::select(Density,Active.Ingredient..AI.,AI..)
+    
     if(nrow(guesses) != 1){
         stop(paste(product_name, " and ", original, " doesn't provide enough information"))
-    } 
+    }
     return(data.frame(row, guesses, stringsAsFactors = FALSE))
 }, .inform = TRUE)
 
