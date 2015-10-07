@@ -4,33 +4,27 @@
 ## extract the raw insect data that corresponds to it into a df.
 ############################################################
 
-## set wd, load libs, source helpers, read data, and define input files
-setwd("/Users/Yoni/Documents/ZhangLab")
-
-## set options to avoid memory issues:
-##options(java.parameters = "-Xmx8000m")
-
 library(openxlsx)
 library(dplyr)
 library(plyr)
 library(digest)
 
-source("R/export_helper_funs.R")
+source("~/Documents/ZhangLab/R/Chlorpyrifos/export_helper_funs.R")
 
 ## there are additional data files that need to be added
-dat <- read.csv("ExcelData/Data-allCpyr-withAI.csv",
+dat <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-allCpyr-withAI.csv",
                 stringsAsFactors = FALSE, na.strings = c(""))
 
-dat1 <- read.csv("ExcelData/Data-Cpyr-May2015-Mike.csv",
+dat1 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-Mike.csv",
                  stringsAsFactors = FALSE)
 
-dat2 <- read.csv("ExcelData/Data-Cpyr-Oct2014-Jess.csv",
+dat2 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Jess.csv",
                 stringsAsFactors = FALSE)
 
-input_files <- c("ExcelData/Data-Cpyr-Oct2014-Raw.csv",   
-                "ExcelData/Data-FromSunny-23Sep-Raw.csv",
-                 "ExcelData/Data-Katy-Cpyr-All-Raw.csv",
-                 "ExcelData/Data-Cpyr-May2015-MikeRaw.csv")
+input_files <- c("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Raw.csv",   
+                "~/Dropbox/ZhangLabData/ExcelData/Data-FromSunny-23Sep-Raw.csv",
+                 "~/Dropbox/ZhangLabData/ExcelData/Data-Katy-Cpyr-All-Raw.csv",
+                 "~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-MikeRaw.csv")
 
 ## get all pdf names from the data set
 pdfs <- as.list(unique(unlist(llply(list(dat, dat1, dat2), function(d){
@@ -135,6 +129,6 @@ response_tables_lookup <- ldply(list(dat, dat1, dat2), function(d) {
 rm(dat, dat1, dat2, input_files, pdf_locs_in_files, pdfs, files, pdfs_in_dataset_not_in_file,
    pdfs_in_file_not_in_dataset, pdfs_to_file, group_cols, ehf, f)
 
-save(response_tables, response_tables_lookup, file = "response_data.rda")
+save(response_tables, response_tables_lookup, file = "~/Dropbox/ZhangLabData/response_data.rda")
 ############################################################
 ############################################################

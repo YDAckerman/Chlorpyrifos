@@ -87,7 +87,7 @@ source("~/Documents/ZhangLab/R/Chlorpyrifos/table_operations.R")
 
 ## Let's pare down ins_table into only those trials that used a
 ## single AI (thus control is not included) and lasted fewer than
-## 100 days.
+## 50 days.
 
 ## with the introduction of the new data comes a few new things to
 ## keep in mind. For instance: multiple active ingredients now have,
@@ -97,15 +97,27 @@ a <- ins_table %>%
     dplyr::summarise(num_ai = length(unique(AI))) %>%
     filter(num_ai <= 1)
 
+ai_thresh <- ins_table %>%
+    group_by(V1) %>%
+    dplyr::summarise(num_ai = length(na.omit(unique(AI)))) %>%
+    filter(num_ai > 2)
+    
+
+utc_thresh <- ins_table %>%
+    filter(Pesticide == "UTC" & insectDays > 100) %>%
+    select(V1) %>%
+    distinct(V1)
+    
 tmp <- ins_table %>%
     filter(is.na(MPNkey) &
            Pesticide != "UTC" &
            !is.na(AI) &
            !is.na(AILbsAcre) &
            !is.infinite(LnR1) &
-##           Pest %in% c("PA", "AW") & ## might want to remove in future
            studyDuration < 50 &
-           Pesticide %in% a$Pesticide
+           Pesticide %in% a$Pesticide &
+           V1 %in% utc_thresh$V1 &
+           V1 %in% ai_thresh$V1
            )
 
 a <- ins_table %>%
@@ -146,7 +158,7 @@ b <- tmp %>%
     ##ungroup() %>%
     dplyr::arrange(desc(count1))
 
-print.data.frame(b)
+## print.data.frame(b)
 
 ## the above table indicates that AC, AW, BAA, BAW, and
 ## PA are all appropriate for MA (So long as we filter
@@ -161,6 +173,93 @@ tmp <- semi_join(tmp, b, by = c("Pest", "AI_s"))
 #### Without Errors
 
 ### MCMC
+
+## 
+## dsetsMCMC <- llply(unique(tmp$Pest), failwith(NA, function(pest){
+##     tmp_pest <- tmp %>% filter(Pest == pest) ## teehee
+##     mcmcMod <- MCMCglmm(LnR1 ~ AI_s - 1,
+##                         random = ~ V1,
+##                         family = "gaussian",
+##                         data = tmp_pest,
+##                         prior = prior3,
+##                         nitt = 20000,
+##                         burnin = 10000, verbose = FALSE)
+##     means <- colMeans(mcmcMod$Sol)
+##     testd <- data.frame(AI = gsub("AI_s", "", names(means)),
+##                         post.mean = means,
+##                         HPDinterval(mcmcMod$Sol),
+##                         Pest = pest, stringsAsFactors = FALSE
+##                         )
+##     colnames(testd)[3:4] <- c("lower", "upper")
+##     testd
+## }), .progress = "text")
+
+## ### LMER
+
+## dsetsLMER <- llply(unique(tmp$Pest), failwith(NA , function(pest){
+##     tmp_pest <- tmp %>% filter(Pest == pest) ## teehee
+##     ## use a random coefficient for rate, random intercepts for V1
+##     ## and PDF, and a fixed effect for AI:
+##     ## print(pest)
+##     ## print(tmp_pest %>% group_by(AI_s) %>% dplyr::summarise(cnt = n()))
+##     ##stop()
+##     lmerMod <- glmer(LnR1 ~
+##                     ##(Rate - 1| AI) +
+##                     (1 | V1) +
+##                     ##(1 | PDF.file.name) +
+##                     AI_s - 1,
+##                     tmp_pest)
+##     means <- fixef(lmerMod)
+##     intervals <- (confint(lmerMod, method = "boot"))[names(means),]
+##     testd <- data.frame(AI= gsub("AI_s", "", names(means)),
+##                post.mean = means,
+##                intervals,
+##                Pest = pest)
+##     colnames(testd)[3:4] <- c("lower", "upper")
+##     testd
+## }), .progress = "text")
+
+## ## vis
+
+## dsets_combined <- llply(1:5, function(x){
+##     rbind(
+##     dsetsMCMC[[x]] %>% mutate(set = "mcmc"),
+##     dsetsLMER[[x]] %>% mutate(set = "lmer")
+##     )
+## })
+
+## grobs_unweighted <- llply(dsets_combined, failwith(NA, function(c_d){
+##     if(class(c_d) != "data.frame"){ return(NULL) }
+##     ##stop()
+##     pest <-  unique(c_d$Pest)
+##     c_d$AI_s <- unlist(
+##         llply(c_d$AI,
+##               function(x) paste(str_sub(x, c(1,-2), c(6,-1)), collapse = "")))
+##     #### print(c_d$AI_s)
+##     c_d <- c_d %>% arrange(post.mean)
+##     c_d$AI_s <- factor(c_d$AI_s, levels = c("chlorp-s", setdiff(c_d$AI_s, "chlorp-s")))
+##     ggplot(c_d, aes(x = AI_s, y = post.mean, color = set)) +
+##         geom_point() +
+##             geom_pointrange(aes(ymax = upper, ymin = lower)) +
+##                 theme(axis.text.x = element_text(angle = 90, hjust = 0)) +
+##                     xlab(label = "Active Ingredient") +
+##                     ggtitle(pest)
+## }))
+
+
+## g <- do.call(arrangeGrob, grobs_unweighted)
+## do.call(grid.arrange, grobs)
+
+#### With error estimates
+
+filter_set <- tmp %>%
+    filter(!is.na(SEMestMin) & !is.na(SEMestMax)) %>%
+    group_by(Pest, AI_s) %>%
+    dplyr::summarise(num = n(), numV1 = length(unique(V1))) %>%
+    filter(num > 10 & Pest != "BAA" & Pest != "ACP")
+
+tmp <- semi_join(tmp, filter_set, by = c("Pest", "AI_s"))
+
 
 ## prior (see mcmcMods.r)
 prior3 <- list(R = list(V = 1, nu = .002),
@@ -183,7 +282,7 @@ dsetsMCMC <- llply(unique(tmp$Pest), failwith(NA, function(pest){
                         )
     colnames(testd)[3:4] <- c("lower", "upper")
     testd
-}), .progress = "text")
+}))
 
 ### LMER
 
@@ -191,8 +290,8 @@ dsetsLMER <- llply(unique(tmp$Pest), failwith(NA , function(pest){
     tmp_pest <- tmp %>% filter(Pest == pest) ## teehee
     ## use a random coefficient for rate, random intercepts for V1
     ## and PDF, and a fixed effect for AI:
-    print(pest)
-    print(tmp_pest %>% group_by(AI_s) %>% dplyr::summarise(cnt = n()))
+    ## print(pest)
+    ## print(tmp_pest %>% group_by(AI_s) %>% dplyr::summarise(cnt = n()))
     ##stop()
     lmerMod <- glmer(LnR1 ~
                     ##(Rate - 1| AI) +
@@ -208,25 +307,23 @@ dsetsLMER <- llply(unique(tmp$Pest), failwith(NA , function(pest){
                Pest = pest)
     colnames(testd)[3:4] <- c("lower", "upper")
     testd
-}), .progress = "text")
+}))
 
-## vis
-
-dsets_combined <- llply(1:5, function(x){
+dsets_combined_w <- llply(1:2, function(x){
     rbind(
     dsetsMCMC[[x]] %>% mutate(set = "mcmc"),
     dsetsLMER[[x]] %>% mutate(set = "lmer")
     )
 })
 
-grobs_unweighted <- llply(dsets_combined, failwith(NA, function(c_d){
+grobs_weighted <- llply(dsets_combined_w, failwith(NA, function(c_d){
     if(class(c_d) != "data.frame"){ return(NULL) }
     ##stop()
     pest <-  unique(c_d$Pest)
     c_d$AI_s <- unlist(
         llply(c_d$AI,
               function(x) paste(str_sub(x, c(1,-2), c(6,-1)), collapse = "")))
-    ##print(c_d$AI_s)
+    #### print(c_d$AI_s)
     c_d <- c_d %>% arrange(post.mean)
     c_d$AI_s <- factor(c_d$AI_s, levels = c("chlorp-s", setdiff(c_d$AI_s, "chlorp-s")))
     ggplot(c_d, aes(x = AI_s, y = post.mean, color = set)) +
@@ -237,87 +334,7 @@ grobs_unweighted <- llply(dsets_combined, failwith(NA, function(c_d){
                     ggtitle(pest)
 }))
 
+##do.call(grid.arrange, grobs_weighted)
 
-g <- do.call(arrangeGrob, grobs_unweighted)
-## do.call(grid.arrange, grobs)
+#### ALL data sets:
 
-#### With error estimates
-
-filter_set <- tmp %>%
-    filter(!is.na(SEMestMin) & !is.na(SEMestMax)) %>%
-    group_by(Pest, AI_s) %>%
-    dplyr::summarise(num = n(), numV1 = length(unique(V1))) %>%
-    filter(num > 10 & Pest != "BAA" & Pest != "ACP")
-
-tmp <- semi_join(tmp, filter_set, by = c("Pest", "AI_s"))
-
-dsetsMCMC <- llply(unique(tmp$Pest), failwith(NA, function(pest){
-    tmp_pest <- tmp %>% filter(Pest == pest) ## teehee
-    mcmcMod <- MCMCglmm(LnR1 ~ AI_s - 1,
-                        random = ~ V1,
-                        family = "gaussian",
-                        data = tmp_pest,
-                        prior = prior3,
-                        nitt = 20000,
-                        burnin = 10000, verbose = FALSE)
-    means <- colMeans(mcmcMod$Sol)
-    testd <- data.frame(AI = gsub("AI_s", "", names(means)),
-                        post.mean = means,
-                        HPDinterval(mcmcMod$Sol),
-                        Pest = pest, stringsAsFactors = FALSE
-                        )
-    colnames(testd)[3:4] <- c("lower", "upper")
-    testd
-}), .progress = "text")
-
-### LMER
-
-dsetsLMER <- llply(unique(tmp$Pest), failwith(NA , function(pest){
-    tmp_pest <- tmp %>% filter(Pest == pest) ## teehee
-    ## use a random coefficient for rate, random intercepts for V1
-    ## and PDF, and a fixed effect for AI:
-    print(pest)
-    print(tmp_pest %>% group_by(AI_s) %>% dplyr::summarise(cnt = n()))
-    ##stop()
-    lmerMod <- glmer(LnR1 ~
-                    ##(Rate - 1| AI) +
-                    (1 | V1) +
-                    ##(1 | PDF.file.name) +
-                    AI_s - 1,
-                    tmp_pest)
-    means <- fixef(lmerMod)
-    intervals <- (confint(lmerMod, method = "boot"))[names(means),]
-    testd <- data.frame(AI= gsub("AI_s", "", names(means)),
-               post.mean = means,
-               intervals,
-               Pest = pest)
-    colnames(testd)[3:4] <- c("lower", "upper")
-    testd
-}), .progress = "text")
-
-dsets_combined <- llply(1:2, function(x){
-    rbind(
-    dsetsMCMC[[x]] %>% mutate(set = "mcmc"),
-    dsetsLMER[[x]] %>% mutate(set = "lmer")
-    )
-})
-
-grobs_weigthed <- llply(dsets_combined, failwith(NA, function(c_d){
-    if(class(c_d) != "data.frame"){ return(NULL) }
-    ##stop()
-    pest <-  unique(c_d$Pest)
-    c_d$AI_s <- unlist(
-        llply(c_d$AI,
-              function(x) paste(str_sub(x, c(1,-2), c(6,-1)), collapse = "")))
-    ##print(c_d$AI_s)
-    c_d <- c_d %>% arrange(post.mean)
-    c_d$AI_s <- factor(c_d$AI_s, levels = c("chlorp-s", setdiff(c_d$AI_s, "chlorp-s")))
-    ggplot(c_d, aes(x = AI_s, y = post.mean, color = set)) +
-        geom_point() +
-            geom_pointrange(aes(ymax = upper, ymin = lower)) +
-                theme(axis.text.x = element_text(angle = 90, hjust = 0)) +
-                    xlab(label = "Active Ingredient") +
-                    ggtitle(pest)
-}))
-
-do.call(grid.arrange, grobs_weighted)

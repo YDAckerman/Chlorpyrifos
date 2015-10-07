@@ -5,8 +5,8 @@
 ## oy vey, should have made this a class...
 
 to <- new.env()
-setwd("/Users/Yoni/Documents/ZhangLab")
-source("R/helper_functions.R")
+##setwd("/Users/Yoni/Documents/ZhangLab")
+source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 
 ## wrapper function to perform operations on
 ## one of the insect-data tables. So far,

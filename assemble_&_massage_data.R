@@ -4,7 +4,7 @@
 
 ##____________set__working__ directory____________________##
 
-setwd("/Users/Yoni/Documents/ZhangLab")
+setwd("~/Documents/ZhangLab/R/Chlorpyrifos")
 
 ##_________________set__options___________________________##
 
@@ -13,18 +13,18 @@ options(dplyr.width = Inf)
 ##__________source:__data__dicts__functions_______________##
 
 ## source("R/create_pest_name_dict.R") yields:
-load("~/Documents/ZhangLab/pestDictionary.rda")
+load("~/Dropbox/ZhangLabData/pestDictionary.rda")
 ## Gives: pestDict
 
 ## source("R/export_multitable_excel_to.R") yields:
-load("~/Documents/ZhangLab/response_data.rda")
+load("~/Dropbox/ZhangLabData/response_data.rda")
 ## Gives: response_tables_lookup & response_tables
 
-source("R/massage_functions.R")
+source("massage_functions.R")
 ## Gives: environment mf
-source("R/table_operations.R")
+source("table_operations.R")
 ## Gives: environment to
-source("R/create_unique_multiprod_keys.R")
+source("create_unique_multiprod_keys.R")
 ## Gives: addMultiProdKeysToData
 
 ##_______________________workflow_________________________##
@@ -139,33 +139,6 @@ ins_table_treated <- filter(ins_table, Pesticide != "UTC")
 
 ins_table_treated <- mf$cPesticideMatchCol(ins_table_treated)
 ins_table_utc["Pesticide.commercial.name"] <- NA
-
-##________________add unique multi prod #s_____________________##
-
-## dat <- addMultiProdKeysToData()
-
-##______________add Uniform rate info to dat___________________##
-
-## update: this is already present in the "newly revised edition of" the data set
-
-## dat <- dat %>%
-##     arrange(desc(Original.sequence)) %>%
-##     select(-Uniform.application.rate,
-##            -Uniform.application.rate.units,
-##            -Density,
-##            -Application.Counts)
-
-## dat_supplement <- read.csv("ExcelData/Data-allCpyr-withAIForCalc.csv",
-##                            stringsAsFactors = FALSE,
-##                            na.strings = c("", "uncertain",
-##                                "unknown formulation", "unknown", "unclear")) %>%
-##     arrange(desc(Original.sequence)) %>%
-##     select(Uniform.application.rate,
-##            Uniform.application.rate.units,
-##            Density,
-##            Application.Counts)
-
-## dat <- cbind(dat, dat_supplement)
 
 ##_________________match mpn's between dfs__________________##
 
@@ -513,15 +486,3 @@ rm(addMultiProdKeysToData, AI_table, entered, hf, i, ins_table_treated,
 ######################################################################
 ######################################################################
 
-                   AI    mn    mx
-1    (s)-cypermethrin 0.011 0.212
-2     beta-cyfluthrin 0.012 0.024
-3          carbofuran 0.100 1.500
-4        chlorpyrifos 0.250 7.842
-5          cyfluthrin 0.017 0.060
-6       flubendiamide 0.031 0.125
-7   gamma-cyhalothrin 0.004 0.100
-8          indoxacarb 0.025 0.220
-9  lambda-cyhalothrin 0.008 0.263
-10    methoxyfenozide 0.106 0.150
-11  zeta-cypermethrin 0.019 0.051

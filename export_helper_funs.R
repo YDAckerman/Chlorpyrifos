@@ -4,9 +4,7 @@
 
 ehf <- new.env()
 
-setwd("/Users/Yoni/Documents/ZhangLab")
-source("R/helper_functions.R")
-
+source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 
 ## given the correct file, find the indices of the raw block of data
 ## corresponding to the pdfname

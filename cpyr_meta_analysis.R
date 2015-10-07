@@ -214,7 +214,7 @@ tmp <- semi_join(tmp, b, by = c("Pest", "AI_s"))
 ##________________________##
 
 ## use qq plots to determine if normal distribution is appropriate
-
+n
 do.call(grid.arrange, llply(unique(b$AI_s), function(ingredient){
     g <- tmp %>% filter(AI_s == ingredient)
     ## ggplot(g, aes(x = LnR)) + geom_density() + ggtitle(ingredient)
@@ -397,15 +397,15 @@ prior3 <- list(R = list(V = 1, nu = .002),
 ## include SEM estimates.
 dsetsMCMC <- llply(unique(tmp$Pest), failwith(NA, function(pest){
     tmp_pest <- tmp %>% filter(Pest == pest) ## teehee
-    mcmcMod <- MCMCglmm(LnR1 ~ AI - 1,
-                        random = ~ PDF.file.name + V1,
+    mcmcMod <- MCMCglmm(LnR1 ~ AI_s - 1,
+                        random = ~ V1,
                         family = "gaussian",
                         data = tmp_pest,
-                        prior = prior1,
+                        prior = prior3,
                         nitt = 20000,
                         burnin = 10000, verbose = FALSE)
     means <- colMeans(mcmcMod$Sol)
-    testd <- data.frame(AI = gsub("AI", "", names(means)),
+    testd <- data.frame(AI = gsub("AI_s", "", names(means)),
                         post.mean = means,
                         HPDinterval(mcmcMod$Sol),
                         Pest = pest, stringsAsFactors = FALSE
@@ -437,7 +437,7 @@ dsetsLMER <- llply(unique(tmp$Pest), failwith(NA , function(pest){
     testd
 }), .progress = "text")
 
-grobs <- llply(dsetsLMER, failwith(NA, function(c_d){
+grobs <- llply(dsetsMCMC, failwith(NA, function(c_d){
     if(class(c_d) != "data.frame"){ return(NULL) }
     ##stop()
     pest <-  unique(c_d$Pest)
@@ -454,6 +454,32 @@ grobs <- llply(dsetsLMER, failwith(NA, function(c_d){
                     xlab(label = "Active Ingredient") +
                     ggtitle(pest)
 }))
+
+dsets_combined <- llply(1:5, function(x){
+    rbind(
+    dsetsMCMC[[x]] %>% mutate(set = "mcmc"),
+    dsetsLMER[[x]] %>% mutate(set = "lmer")
+    )
+})
+
+grobs <- llply(dsets_combined, failwith(NA, function(c_d){
+    if(class(c_d) != "data.frame"){ return(NULL) }
+    ##stop()
+    pest <-  unique(c_d$Pest)
+    c_d$AI_s <- unlist(
+        llply(c_d$AI,
+              function(x) paste(str_sub(x, c(1,-2), c(6,-1)), collapse = "")))
+    ##print(c_d$AI_s)
+    c_d <- c_d %>% arrange(post.mean)
+    c_d$AI_s <- factor(c_d$AI_s, levels = c("chlorp-s", setdiff(c_d$AI_s, "chlorp-s")))
+    ggplot(c_d, aes(x = AI_s, y = post.mean, color = set)) +
+        geom_point() +
+            geom_pointrange(aes(ymax = upper, ymin = lower)) +
+                theme(axis.text.x = element_text(angle = 90, hjust = 0)) +
+                    xlab(label = "Active Ingredient") +
+                    ggtitle(pest)
+}))
+
 
 g <- do.call(arrangeGrob, grobs) ##[c(1:7, 9:10)]
 

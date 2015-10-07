@@ -4,10 +4,10 @@
 ############################################################
 
 ## set working directory, load sources & libraries
-setwd("/Users/Yoni/Documents/ZhangLab")
+setwd("~/Documents/ZhangLab/R/Chlorpyrifos")
 
 library(stringdist)
-source("R/helper_functions.R")
+source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 
 mf <- new.env()
 
@@ -16,7 +16,8 @@ mf <- new.env()
 mf$calcPercent <- function(.data, baseName, baseColumn, valueColumn){
     val <- .data[[valueColumn]][which(.data[[baseColumn]] == baseName)]
     ## add 1 to valueColumn to remove Zeros (ok?)
-    data.frame(.data, PercControl = .data[[valueColumn]] / val,
+    data.frame(.data,
+               PercControl = .data[[valueColumn]] / val,
                PercControl1 = (.data[[valueColumn]] + 1) / val, stringsAsFactors = FALSE)
 }
 

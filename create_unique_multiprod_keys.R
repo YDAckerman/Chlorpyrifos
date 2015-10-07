@@ -7,41 +7,16 @@ addMultiProdKeysToData <- function(){
     require(plyr)
     require(pryr)
     
-    setwd("/Users/Yoni/Documents/ZhangLab")
+    setwd("~/Documents/ZhangLab/R/Chlorpyrifos")
 
     ## source("R/insect_dict_helper_funs.R")
     ## source("R/export_helper_funs.R")
-    source("R/stack.R")
+    source("stack.R")
 
     ## load data
-    load("~/Documents/ZhangLab/full_data_set.rda")
+    load("~/Dropbox/ZhangLabData/full_data_set.rda")
 
     dat <- full_dat
-    
-    ## files = list("~/Documents/ZhangLab/ExcelData/Data-allCpyr-withAI.csv",
-    ##     "~/Documents/ZhangLab/ExcelData/Data-Cpyr-May2015-Mike.csv",
-    ##     "~/Documents/ZhangLab/ExcelData/Data-Cpyr-Oct2014-Jess.csv")
-    
-    
-    ## columns <- c("Entered.by", "Proofed.by", "PDF.file.name", "Locality", "Crop", 
-    ##              "Variety", "Study.design..usually..random.complete.block.design..for.field.studies.", 
-    ##              "Number.of.replicates", "X.Field..or..lab..study",
-    ##              "Treatment.medium..e.g....whole.tree..or..food..sprayed.fruit...", 
-    ##              "Source..Fig.or.Table.number.", "Pesticide.commercial.name", 
-    ##              "Application.rate", "Application.rate.units", "Multiple.product.numbers", 
-    ##              "Year", "Uniform.application.rate", "Uniform.application.rate.units", "Density", "Active.Ingredient..AI.",
-    ##              "Application.Counts",
-    ##              "Pest..as..common.name..scientific.name...if.both.given..if.not.just.enter.which.is.stated.in.article.",
-    ##              "Life.stage.tested..if.stated..egg..larva..pupa..adult.",
-    ##              "Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..", 
-    ##              "Notes")
-    
-    ## dat <- ldply(files, function(file){
-    ##     d <- read.csv(file,
-    ##                   stringsAsFactors = FALSE,
-    ##                   na.strings = c("", "uncertain", "unknown", "unknown formulation", "unclear"))
-    ##     d[,columns]
-    ## })
 
     ## get the number of multiple product numbers
     num_mprods <- dat %>%
@@ -72,7 +47,7 @@ addMultiProdKeysToData <- function(){
                               })
 
     ## merge key_table into dat for the desired result
-    merge(dat, key_table, by = c("PDF.file.name",
+    tmp <- merge(dat, key_table, by = c("PDF.file.name",
                               "Source..Fig.or.Table.number.",
                               "Multiple.product.numbers"))
 }
