@@ -1,0 +1,48 @@
+CPYR MetA -*- mode: org -*-
+
+#+STARTUP: showall
+
+
+_Brief Tutorial_
+** press TAB here
+   use TAB to open / close heading
+   use shift-TAB to open close the whole doc
+   use meta-ret to create a new heading
+   use meta-right to promote a heading
+   use meta-left to demote
+
+** Welcome to org-mode
+  this is a list:
+  1.
+  2. 
+  3.
+    these are things you can do:
+  _welcome_, *etc* ~verb~ /ital/ +ther+
+
+
+
+*TODO*: 
+
+_*TODO*_
+** CPYR
+  * cpyr_final_dataSummary
+    - +binned plot of pest/ai counts+
+    - +histogram of pest counts+
+    - +histogram of ai counts+
+    - +summary of locations+
+
+  * cpyr_final_analysis
+    - incorporate the other insects / ais
+      for which we have 'enough' data. Consider GLS analysis
+      instead of random effects analysis.
+    - +add imputed SEM values and progagte+
+  
+  * writeup
+    - implement mike's changes
+
+** BEE
+  * edits to writeup
+  * Calc #AI near each section
+  * see notes
+
+** PDF

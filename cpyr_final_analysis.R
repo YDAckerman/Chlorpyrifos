@@ -20,7 +20,7 @@ library(stringr)
 ##__________________set options___________________________##
 
 options(dplyr.width = Inf)
-
+options(width = 100)
 ##_____________source: data dicts functions_______________##
 
 #source("R/assemble_&_massage_data.R")
@@ -31,6 +31,13 @@ source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 ## Gives: hf (helper functions)
 source("~/Documents/ZhangLab/R/Chlorpyrifos/table_operations.R")
 ## Gives: to (table operations)
+
+
+## Global Var, indicates whether we're going to use just the
+## super-robust data or if we're going to use everything we
+## can:
+
+full_meta_jacket <- FALSE
 
 ##______________________Intro_____________________________##
 ## We have amassed data from 114 pesticide efficacy studies in
@@ -95,7 +102,7 @@ source("~/Documents/ZhangLab/R/Chlorpyrifos/table_operations.R")
 a <- ins_table %>%
     group_by(Pesticide) %>%
     dplyr::summarise(num_ai = length(unique(AI))) %>%
-    filter(num_ai <= 1)
+    filter(num_ai > 1)
 
 ai_thresh <- ins_table %>%
     group_by(V1) %>%
@@ -114,17 +121,17 @@ tmp <- ins_table %>%
            !is.na(AI) &
            !is.na(AILbsAcre) &
            !is.infinite(LnR1) &
+           !is.na(LnR1) &
            studyDuration < 50 &
            Pesticide %in% a$Pesticide &
            V1 %in% utc_thresh$V1 &
            V1 %in% ai_thresh$V1
            )
 
-a <- ins_table %>%
-    filter(is.na(MPNkey)) %>%
+a <- tmp %>%
     group_by(Pest, AI) %>%
     dplyr::summarise(num = n()) %>%
-    filter(num > 10 & !is.na(AI))
+    filter(num >= 6 & !is.na(AI))
 
 tmp <- semi_join(tmp, a, by = c("Pest", "AI"))
 tmp <- as.data.frame(tmp)
@@ -137,6 +144,7 @@ tmp <- as.data.frame(tmp)
 
 b <- mlply(tmp %>% select(AI, AILbsAcre), function(AI, AILbsAcre){
     ai <- AI
+    if(AI == "milbemectin"){return(AI)}
     (ranges %>%
         filter(AI == ai) %>%
             transmute(
@@ -152,105 +160,34 @@ tmp$AI_s <- unname(unlist(b))
 ## let's quickly look at which location, ai, pest triples will
 ## be appropriate for meta-analysis:
 
-b <- tmp %>%
-    dplyr::group_by(Pest, AI_s) %>%
-    dplyr::summarise(count1 = n()) %>%
-    ##ungroup() %>%
-    dplyr::arrange(desc(count1))
 
 ## print.data.frame(b)
 
 ## the above table indicates that AC, AW, BAA, BAW, and
 ## PA are all appropriate for MA (So long as we filter
 ## by count1 >= 10). This gives:
-b <- b %>% filter(count1 >= 10 & Pest %in% c("AC", "AW", "BAA", "BAW", "PA"))
+if (full_meta_jacket){
+    b <- tmp %>%
+        dplyr::group_by(Pest, AI_s) %>%
+            dplyr::summarise(count1 = n()) %>%
+                ##ungroup() %>%
+                dplyr::arrange(desc(count1))
 
-tmp <- semi_join(tmp, b, by = c("Pest", "AI_s"))
+    b <- b %>% filter(count1 >= 10 & Pest %in% c("AC", "AW", "BAA", "BAW", "PA"))
+    tmp <- semi_join(tmp, b, by = c("Pest", "AI_s"))
+} else {
+    b <- tmp %>%
+        dplyr::group_by(Pest) %>%
+            dplyr::summarise(count = length(unique(AI))) %>%
+                filter(count > 1)
+    tmp <- semi_join(tmp, b, by = c("Pest"))
+}
 
 ##############################################################################
 ## Analysis
 
-#### Without Errors
-
-### MCMC
-
-## 
-## dsetsMCMC <- llply(unique(tmp$Pest), failwith(NA, function(pest){
-##     tmp_pest <- tmp %>% filter(Pest == pest) ## teehee
-##     mcmcMod <- MCMCglmm(LnR1 ~ AI_s - 1,
-##                         random = ~ V1,
-##                         family = "gaussian",
-##                         data = tmp_pest,
-##                         prior = prior3,
-##                         nitt = 20000,
-##                         burnin = 10000, verbose = FALSE)
-##     means <- colMeans(mcmcMod$Sol)
-##     testd <- data.frame(AI = gsub("AI_s", "", names(means)),
-##                         post.mean = means,
-##                         HPDinterval(mcmcMod$Sol),
-##                         Pest = pest, stringsAsFactors = FALSE
-##                         )
-##     colnames(testd)[3:4] <- c("lower", "upper")
-##     testd
-## }), .progress = "text")
-
-## ### LMER
-
-## dsetsLMER <- llply(unique(tmp$Pest), failwith(NA , function(pest){
-##     tmp_pest <- tmp %>% filter(Pest == pest) ## teehee
-##     ## use a random coefficient for rate, random intercepts for V1
-##     ## and PDF, and a fixed effect for AI:
-##     ## print(pest)
-##     ## print(tmp_pest %>% group_by(AI_s) %>% dplyr::summarise(cnt = n()))
-##     ##stop()
-##     lmerMod <- glmer(LnR1 ~
-##                     ##(Rate - 1| AI) +
-##                     (1 | V1) +
-##                     ##(1 | PDF.file.name) +
-##                     AI_s - 1,
-##                     tmp_pest)
-##     means <- fixef(lmerMod)
-##     intervals <- (confint(lmerMod, method = "boot"))[names(means),]
-##     testd <- data.frame(AI= gsub("AI_s", "", names(means)),
-##                post.mean = means,
-##                intervals,
-##                Pest = pest)
-##     colnames(testd)[3:4] <- c("lower", "upper")
-##     testd
-## }), .progress = "text")
-
-## ## vis
-
-## dsets_combined <- llply(1:5, function(x){
-##     rbind(
-##     dsetsMCMC[[x]] %>% mutate(set = "mcmc"),
-##     dsetsLMER[[x]] %>% mutate(set = "lmer")
-##     )
-## })
-
-## grobs_unweighted <- llply(dsets_combined, failwith(NA, function(c_d){
-##     if(class(c_d) != "data.frame"){ return(NULL) }
-##     ##stop()
-##     pest <-  unique(c_d$Pest)
-##     c_d$AI_s <- unlist(
-##         llply(c_d$AI,
-##               function(x) paste(str_sub(x, c(1,-2), c(6,-1)), collapse = "")))
-##     #### print(c_d$AI_s)
-##     c_d <- c_d %>% arrange(post.mean)
-##     c_d$AI_s <- factor(c_d$AI_s, levels = c("chlorp-s", setdiff(c_d$AI_s, "chlorp-s")))
-##     ggplot(c_d, aes(x = AI_s, y = post.mean, color = set)) +
-##         geom_point() +
-##             geom_pointrange(aes(ymax = upper, ymin = lower)) +
-##                 theme(axis.text.x = element_text(angle = 90, hjust = 0)) +
-##                     xlab(label = "Active Ingredient") +
-##                     ggtitle(pest)
-## }))
-
-
-## g <- do.call(arrangeGrob, grobs_unweighted)
-## do.call(grid.arrange, grobs)
-
-#### With error estimates
+## Meta Analysis for AW and PA - the two pests for which we have
+## enough data to do more robust statistics 
 
 filter_set <- tmp %>%
     filter(!is.na(SEMestMin) & !is.na(SEMestMax)) %>%
@@ -281,6 +218,15 @@ dsetsMCMC <- llply(unique(tmp$Pest), failwith(NA, function(pest){
                         Pest = pest, stringsAsFactors = FALSE
                         )
     colnames(testd)[3:4] <- c("lower", "upper")
+    cpyr_eff <- testd %>%
+        filter(AI == "chlorpyrifos-s")
+    testd <- testd %>% mutate(
+                  upper_diff = cpyr_eff$post.mean - lower,
+                  lower_diff = cpyr_eff$post.mean - upper
+                  ) %>%
+        mutate(upper_diff = ifelse(AI == "chlorpyrifos-s", NA, upper_diff),
+               lower_diff = ifelse(AI == "chlorpyrifos-s", NA, lower_diff))
+    rownames(testd) <- NULL
     testd
 }))
 
@@ -306,6 +252,15 @@ dsetsLMER <- llply(unique(tmp$Pest), failwith(NA , function(pest){
                intervals,
                Pest = pest)
     colnames(testd)[3:4] <- c("lower", "upper")
+    cpyr_eff <- testd %>%
+        filter(AI == "chlorpyrifos-s")
+    testd <- testd %>% mutate(
+              upper_diff = cpyr_eff$post.mean - lower,
+              lower_diff = cpyr_eff$post.mean - upper
+              ) %>%
+        mutate(upper_diff = ifelse(AI == "chlorpyrifos-s", NA, upper_diff),
+               lower_diff = ifelse(AI == "chlorpyrifos-s", NA, lower_diff))
+    rownames(testd) <- NULL
     testd
 }))
 
@@ -327,8 +282,8 @@ grobs_weighted <- llply(dsets_combined_w, failwith(NA, function(c_d){
     c_d <- c_d %>% arrange(post.mean)
     c_d$AI_s <- factor(c_d$AI_s, levels = c("chlorp-s", setdiff(c_d$AI_s, "chlorp-s")))
     ggplot(c_d, aes(x = AI_s, y = post.mean, color = set)) +
-        geom_point() +
-            geom_pointrange(aes(ymax = upper, ymin = lower)) +
+        geom_point(alpha = .5) +
+            geom_pointrange(aes(ymax = upper, ymin = lower, alpha = .5)) +
                 theme(axis.text.x = element_text(angle = 90, hjust = 0)) +
                     xlab(label = "Active Ingredient") +
                     ggtitle(pest)
@@ -336,5 +291,54 @@ grobs_weighted <- llply(dsets_combined_w, failwith(NA, function(c_d){
 
 ##do.call(grid.arrange, grobs_weighted)
 
-#### ALL data sets:
+prior <- list(R=list(V = 1, nu = .002))
 
+### Analysis over all suitable pests, without random effects:
+dsetsMCMC <- llply(unique(tmp$Pest), failwith(NA, function(pest){
+    tmp_pest <- tmp %>% filter(Pest == pest) ## teehee
+    mcmcMod <- MCMCglmm(LnR1 ~ AI - 1,
+                        mev = tmp_pest$SEMestMin,
+                        family = "gaussian",
+                        data = tmp_pest,
+                        prior = prior,
+                        nitt = 20000,
+                        burnin = 10000, verbose = FALSE)
+    means <- colMeans(mcmcMod$Sol)
+    testd <- data.frame(AI = gsub("AI", "", names(means)),
+                        post.mean = means,
+                        HPDinterval(mcmcMod$Sol),
+                        Pest = pest, stringsAsFactors = FALSE
+                        )
+    colnames(testd)[3:4] <- c("lower", "upper")
+    cpyr_eff <- testd %>%
+        filter(AI == "chlorpyrifos")
+    testd <- testd %>% mutate(
+                  upper_diff = cpyr_eff$post.mean - lower,
+                  lower_diff = cpyr_eff$post.mean - upper
+                  ) %>%
+        mutate(upper_diff = ifelse(AI == "chlorpyrifos", NA, upper_diff),
+               lower_diff = ifelse(AI == "chlorpyrifos", NA, lower_diff))
+    rownames(testd) <- NULL
+    testd
+}))
+
+grobs <- llply(dsetsMCMC, failwith(NA, function(c_d){
+    if(class(c_d) != "data.frame"){ return(NULL) }
+    ##stop()
+    pest <-  unique(c_d$Pest)
+    c_d$AI <- unlist(
+        llply(c_d$AI,
+              function(x){ str_sub(x,1,6)} ))
+    c_d <- c_d %>% arrange(post.mean)
+    c_d$AI <- factor(c_d$AI, levels = c("chlorp", setdiff(c_d$AI, "chlorp")))
+    ggplot(c_d, aes(x = AI, y = post.mean)) +
+        geom_point() +
+            geom_pointrange(aes(ymax = upper, ymin = lower)) +
+                theme(axis.text.x = element_text(angle = 90, hjust = 0)) +
+                    xlab(label = "Active Ingredient") +
+                    ggtitle(pest)
+}))
+
+## pdf("~/Dropbox/ZhangLabData/AIvsPest_10_16_15.pdf")
+## g <- do.call(grid.arrange, grobs)
+## dev.off()
