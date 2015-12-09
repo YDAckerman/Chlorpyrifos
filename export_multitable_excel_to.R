@@ -13,13 +13,13 @@ source("~/Documents/ZhangLab/R/Chlorpyrifos/export_helper_funs.R")
 
 ## there are additional data files that need to be added
 dat <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-allCpyr-withAI.csv",
-                stringsAsFactors = FALSE, na.strings = c(""))
+                stringsAsFactors = FALSE, na.strings = c("", "???"))
 
 dat1 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-Mike.csv",
-                 stringsAsFactors = FALSE)
+                 stringsAsFactors = FALSE, na.strings = c("", "???"))
 
 dat2 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Jess.csv",
-                stringsAsFactors = FALSE)
+                stringsAsFactors = FALSE, na.strings = c("", "???"))
 
 input_files <- c("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Raw.csv",   
                 "~/Dropbox/ZhangLabData/ExcelData/Data-FromSunny-23Sep-Raw.csv",
@@ -101,7 +101,9 @@ group_cols <- c("PDF.file.name",
                 "Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..",
                 "Life.stage.tested..if.stated..egg..larva..pupa..adult.",
                 "Locality",
-                "Pest..as..common.name..scientific.name...if.both.given..if.not.just.enter.which.is.stated.in.article.")
+                "Pest..as..common.name..scientific.name...if.both.given..if.not.just.enter.which.is.stated.in.article.",
+                "Year",
+                "Number.of.replicates")
 
 ## test getResponseTables on subset
 f <- ehf$getResponseTables
@@ -126,8 +128,7 @@ response_tables_lookup <- ldply(list(dat, dat1, dat2), function(d) {
           .progress = "text")})
 
 ## clean up the mess
-rm(dat, dat1, dat2, input_files, pdf_locs_in_files, pdfs, files, pdfs_in_dataset_not_in_file,
-   pdfs_in_file_not_in_dataset, pdfs_to_file, group_cols, ehf, f)
+rm(list = setdiff(ls(), c("response_tables", "response_tables_lookup")))
 
 save(response_tables, response_tables_lookup, file = "~/Dropbox/ZhangLabData/response_data.rda")
 ############################################################

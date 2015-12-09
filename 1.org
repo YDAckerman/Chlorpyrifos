@@ -1,3 +1,4 @@
+
 CPYR MetA -*- mode: org -*-
 
 #+STARTUP: showall
@@ -20,29 +21,40 @@ _Brief Tutorial_
   _welcome_, *etc* ~verb~ /ital/ +ther+
 
 
-
-*TODO*: 
-
 _*TODO*_
-** CPYR
-  * cpyr_final_dataSummary
-    - +binned plot of pest/ai counts+
-    - +histogram of pest counts+
-    - +histogram of ai counts+
-    - +summary of locations+
 
-  * cpyr_final_analysis
-    - incorporate the other insects / ais
+** TODO CPYR
+  * DONE cpyr_final_dataSummary
+    - DONE binned plot of pest/ai counts
+    - DONE histogram of pest counts
+    - DONE histogram of ai counts
+    - DONE summary of locations
+
+  * TODO cpyr_final_analysis
+    - DONE incorporate the other insects / ais
       for which we have 'enough' data. Consider GLS analysis
       instead of random effects analysis.
-    - +add imputed SEM values and progagte+
-  
-  * writeup
+    - DONE add imputed SEM values and progagte
+    - DONE quantify 'formulation' effect: use product name as variable 
+      for cpyr-only samples.
+    - DONE quantify cpyr effect across pests: use pest as variable for
+      cpyr-only samples.
+    - research 'unbalanced sample size' statistics, implement what
+      you find.
+    - DONE Stochastically dependent effect sizes - gleser and olkin
+    - assigning weights based on sample size and variance!
+    - DONE create Psi matrix according to gleser & olkin 2009 2.2
+      regression model
+
+  * TODO writeup
     - implement mike's changes
 
-** BEE
+** TODO BEE
   * edits to writeup
-  * Calc #AI near each section
+  * DONE Calc #AI near each section
+    - instead of looking at # of (non-almond) bee-attractive crops,
+      look at how many different chemicals were used within 1-5
+      buffers of almond sections.
   * see notes
 
 ** PDF

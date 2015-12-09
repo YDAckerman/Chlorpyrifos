@@ -21,13 +21,108 @@ mf$calcPercent <- function(.data, baseName, baseColumn, valueColumn){
                PercControl1 = (.data[[valueColumn]] + 1) / val, stringsAsFactors = FALSE)
 }
 
+mf$calcStdMeanDiff <- function(.data){
+    control <- .data %>% filter(Pesticide == "UTC") %>%
+        mutate(stdEr_est =
+               ifelse(is.infinite(stdEr_LB) | is.infinite(stdEr_UB),
+                      NA, stdEr_UB))
+
+    .data <- .data %>%
+        mutate(di_t_sem = mf$a_i(control$Number.of.replicates) *
+               (insectDays - control$insectDays) /
+               control$insectDaysSEM,
+               di_t_est = mf$a_i(control$Number.of.replicates) *
+               (insectDays - control$insectDays) /
+               control$stdEr_est,
+               di_t_imp = mf$a_i(control$Number.of.replicates) *
+               (insectDays - control$insectDays) /
+               (sqrt(control$Number.of.replicates) * control$imputedSEM)
+               )
+    .data
+}
+
+mf$a_i <- function(n_i){
+    is.na(n_i) && return(NA)
+    (4 * n_i - 8) / (4 * n_i - 5)
+}
+
+mf$cov_dij <- function(di_t1, di_t2, ni_c){
+    part1 <- mf$a_i(ni_c) ^ 2
+    part2 <- (ni_c - 1) * ((ni_c - 3) ^ (-1)) *
+        ((ni_c) ^ (-1))
+    part3 <- (di_t1 * di_t2) * (((mf$a_i(ni_c)) ^ 2) * (ni_c - 1) *
+                         ((ni_c - 3) ^ (-1)) - 1)
+    part1 * part2 + part3
+}
+
+mf$cov_dij_imp <- function(di_t1, di_t2, ni, ki){
+    part1 <- mf$a_i(ki) ^ 2
+    part2 <- (ki - 1) * ((ki - 3) ^ (-1)) *
+        ((ni) ^ (-1))
+    part3 <- (di_t1 * di_t2) * (((mf$a_i(ki)) ^ 2) * (ki - 1) *
+                         ((ki - 3) ^ (-1)) - 1)
+    part1 * part2 + part3
+}
+
+mf$var_dij <- function(di, ni_c, ni_t){
+    part1 <- mf$a_i(ni_c) ^ 2
+    part2 <- (ni_c - 1) * ((ni_c - 3) ^ (-1)) * (ni_t + ni_c) *
+        ((ni_c * ni_t) ^ (-1))
+    part3 <- (di ^ 2) * (((mf$a_i(ni_c)) ^ 2) * (ni_c - 1) *
+                         ((ni_c - 3) ^ (-1)) - 1)
+    part1 * part2 + part3
+}
+
+mf$var_dij_imp <- function(di, ni, ki){
+    part1 <- mf$a_i(ki) ^ 2
+    part2 <- (ki - 1) * ((ki - 3) ^ (-1)) * (2) *
+        ((ni) ^ (-1))
+    part3 <- (di ^ 2) * (((mf$a_i(ki)) ^ 2) * (ki - 1) *
+                         ((ki - 3) ^ (-1)) - 1)
+    part1 * part2 + part3    
+}
+
+
+mf$vcov <- function(.data){
+    imputed <- unique(.data$Imputed)
+    ctrl <- .data %>% filter(Product == "UTC")
+    dat <- .data %>% filter(Product != "UTC")
+    nrows <- nrow(dat)
+    indices <- expand.grid(i = 1:nrows, j = 1:nrows)
+    indices <- indices %>% arrange(i, j)
+    mat <- mdply(indices, function(i, j){
+        if(i > j){ 0 }
+        else if(imputed){
+            if(i == j){
+                mf$var_dij_imp(dat[i, "smd"], dat[i, "Replicates"],
+                               nrows)
+            } 
+            else {
+                mf$cov_dij_imp(dat$smd[i], dat$smd[j],
+                               dat$Replicates[i], nrows)
+            }
+        } else {
+            if(i == j){
+                mf$var_dij(dat$smd[i], ctrl$Replicates,
+                           dat$Replicates[i])
+            }
+            else {
+                mf$cov_dij(dat$smd[i], dat$smd[j], ctrl$Replicates)
+            }
+        }
+    }, .expand = TRUE)
+    mat <- matrix(mat$V1, nrows, nrows, byrow = TRUE)
+    mat <- mat + t(mat)
+    mat - mat * diag(.5, nrows, nrows)
+}
+
 mf$convertSEMbyTransform <- function(.data){
 
     ## following the propagation of error given by:
     ## x = ln((a + 1) / b) ->
     ## sigma_x^2 = (1/(a + 1)) ^ 2 * sigma_a ^ 2 + (1/b) ^ 2 * sigma_b  ^ 2
     
-    erCols <- c("stdEr_LB", "stdEr_UB", "insectDaysSEM")
+    erCols <- c("stdEr_LB", "stdEr_UB", "insectDaysSEM", "imputedSEM")
     sems <- .data %>% select_(.dots = erCols)
 
     ## since sigma_a == sigma_b we'll call it sigma_sem
@@ -44,7 +139,7 @@ mf$convertSEMbyTransform <- function(.data){
     ## sqrt(sigma_x^2) = sigma_x
     total <- sqrt(sigma_sem_sq * (sigma_a_sq + sigma_b_sq))
     
-    colnames(total) <- c("trSEM_LB", "trSEM_UB", "trSEM")
+    colnames(total) <- c("trSEM_LB", "trSEM_UB", "trSEM", "trSEMimp")
     cbind(.data, total, stringsAsFactors = FALSE)
 }
 
@@ -97,6 +192,11 @@ mf$convertRate <- function(Uniform.application.rate,
     perc <- mean(aiperc) / 100
     k1 <- prod(as.numeric(c(Application.Counts, unif_rate)))
     dens <- mean(dens)
+    if(!is.na(dens)) {
+        if(dens > 2){
+            dens <- dens * 453.592 * .000264172
+        }
+    }
 
     ## TODO: make sure AI/acre really means AI per acre...
     if (is.na(Uniform.application.rate.units)){
@@ -186,7 +286,7 @@ mf$addMprodMatch <- function(.data){
 mf$standardizeLocality <- function(.data){
 
     ## load states df
-    source("~/Documents/ZhangLab/R/stateAbbr.R")
+    source("~/Documents/ZhangLab/R/Chlorpyrifos/stateAbbr.R")
 
     Locs <- unique(.data$Locality)
 
@@ -204,7 +304,6 @@ mf$standardizeLocality <- function(.data){
         if(length(j) == 0){ return(NA) }
         return(paste(states[j,], collapse = " "))
     }))
-    
     
     ## create a new and aptly named col in data and return data
     .data["standardLocs"] <- standardLocs
@@ -282,7 +381,8 @@ mf$cRate <- function(df){
                    Uniform.application.rate = tmp$Uniform.application.rate[j],
                    Uniform.application.rate.units = tmp$Uniform.application.rate.units[j],
                    Density = tmp$Density[j],
-                   Application.Counts = tmp$Application.Counts[j], stringsAsFactors = FALSE)
+                   Application.Counts = tmp$Application.Counts[j],
+                   stringsAsFactors = FALSE)
 
     })
 }
@@ -346,4 +446,3 @@ mf$convertToUniformRate <- function(Application.rate, Application.rate.units){
 
 ############################################################
 ############################################################
-

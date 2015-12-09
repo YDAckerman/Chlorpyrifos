@@ -33,7 +33,6 @@ source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 source("~/Documents/ZhangLab/R/Chlorpyrifos/table_operations.R")
 ## Gives: to (table operations)
 
-
 #### Data summaries
 prodsToAis <- ins_table %>%
     group_by(Pesticide) %>%

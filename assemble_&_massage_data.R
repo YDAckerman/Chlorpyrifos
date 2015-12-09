@@ -26,6 +26,8 @@ source("table_operations.R")
 ## Gives: environment to
 source("create_unique_multiprod_keys.R")
 ## Gives: addMultiProdKeysToData
+source("stack.R"); set.seed(0)
+## gives the class stack
 
 ##_______________________workflow_________________________##
 ############################################################
@@ -34,27 +36,39 @@ source("create_unique_multiprod_keys.R")
 
 dat <- addMultiProdKeysToData()
 
+
 ##__________________get all tables________________________##
 
 entered <- response_tables_lookup %>% filter(!is.na(V1))
 
 ##__________________make ins_table_________________________##
 ## llply has been giving me some serious shit.
-j <- 0
+
+## initiate stack:
+keys <- replicate(5000, paste(sample(c(letters,1:26), 12, replace = TRUE), collapse = ""))
+stack <- new_stack()
+stack$set(keys)
+
+j <- 0 ## this is for debugging, if an error get's thrown we'll know the index where it
+       ## occured.
+
 ins_table <- do.call(rbind, lapply(1:nrow(entered), function(x){
     row <- entered[x, ]
     hash <- row$V1
     pre_ins_table <- response_tables[[hash]]
     tmp <- dat %>%
-        dplyr::mutate(Source..Fig.or.Table.number. = hf$trim(Source..Fig.or.Table.number.),
-                      PDF.file.name = hf$trim(PDF.file.name)) %>%
+        dplyr::mutate(
+            Source..Fig.or.Table.number. = hf$trim(Source..Fig.or.Table.number.),
+            PDF.file.name = hf$trim(PDF.file.name)
+            ) %>%
         filter(PDF.file.name == row$PDF.file.name &
                Source..Fig.or.Table.number. == row$Source..Fig.or.Table.number.)
     stopifnot(nrow(tmp) != 0)
     col <- "StatTest..Duncan.s..Tukey..etc....incl..signif..level"
     col <- paste0(col, "..and.any.data.transformation..e.g...log.x.1..")
     method <- unique(tmp[, col])
-    method <- unique(ifelse(grepl("duncan", method, ignore.case = TRUE), "Duncan", "Fisher"))
+    method <- unique(ifelse(grepl("duncan", method, ignore.case = TRUE),
+                            "Duncan", "Fisher"))
     ## do all table operations, then merge
     operations <- c("insectDays", "studyDuration","insectDaysSEM", "EstimateSEM")
     pre_ins_tables <- llply(operations, function(operation){
@@ -62,11 +76,13 @@ ins_table <- do.call(rbind, lapply(1:nrow(entered), function(x){
     })
     ## what is this doing? - oh Reduce!
     pre_ins_table <- Reduce(function(...) merge(..., all = TRUE), pre_ins_tables)
-     ## pull from the merged tables the columns we want
+    ## pull from the merged tables the columns we want
     AScol <- setdiff(grep("adjuv", colnames(pre_ins_table), ignore.case = TRUE),
                      grep("rate", colnames(pre_ins_table), ignore.case = TRUE))
-    ASrateCol <- intersect(grep("adjuv", colnames(pre_ins_table), ignore.case = TRUE),
-                           grep("rate", colnames(pre_ins_table), ignore.case = TRUE))
+    ASrateCol <- intersect(grep("adjuv", colnames(pre_ins_table),
+                                ignore.case = TRUE),
+                           grep("rate", colnames(pre_ins_table),
+                                ignore.case = TRUE))
     slice <-
         pre_ins_table %>%
         select(Pesticide = 1,
@@ -81,11 +97,14 @@ ins_table <- do.call(rbind, lapply(1:nrow(entered), function(x){
                    contains("mult", ignore.case = TRUE),
                    contains("prod", ignore.case = TRUE))
                )
-    if(length(AScol) == 1){ slice$AS <- pre_ins_table[, AScol] } else { slice$AS <- NA}
-    if(length(ASrateCol) == 1){ slice$ASrate <- pre_ins_table[, ASrateCol] } else { slice$ASrate <- NA }
+    if(length(AScol) == 1){ slice$AS <- pre_ins_table[, AScol] }
+    else { slice$AS <- NA }
+    if(length(ASrateCol) == 1){ slice$ASrate <- pre_ins_table[, ASrateCol] }
+    else { slice$ASrate <- NA }
     j <- get("j", envir = globalenv())
     assign("j", j + 1, envir = globalenv())
     slice$Rate <- as.character(slice$Rate)
+    slice$SampleID <- replicate(nrow(slice), stack$pop())
     ## attach the columns to the identifying values from row
     ## and return.
     cbind(row, slice, row.names = NULL)
@@ -99,6 +118,9 @@ ins_table$Rate <- gsub("[^0-9\\.\\+]", "", ins_table$Rate)
 i <- hf$mgrep(c("untreated", "check", "utc", "control", "cehck"),
               ins_table$Pesticide, ignore.case = TRUE)
 ins_table$Pesticide[i] <- "UTC"
+
+##________________edit number of replicates__________________##
+ins_table$Number.of.replicates <- as.numeric(ins_table$Number.of.replicates)
 
 ##__________________create Effect ratio______________________##
 ins_table <-
@@ -155,7 +177,6 @@ ins_table_utc["MPNkey"] <- NA
 ##_______________create 'official' rate cols_____________________##
 
 tmp <- mf$cRate(ins_table_treated)
-
 ## test
 ## test <- data.frame(ins_table_treated$RateRaw, tmp$Application.rate, tmp$Application.rate.units, tmp$Uniform.application.rate, tmp$Uniform.application.rate.units)
 ## write.csv(test, "test.csv")
@@ -210,23 +231,61 @@ ins_table_treated <- ins_table_treated[-i, ]
 
 ## TODO: The next sections need to change to incorporate the new data
 
+## I found some lovely little elisions. Instead of dicking around the
+## excel file I'm just going to fill them  in here:
+elisions <- list(
+    Pcide = c("XDE-175", "Transform 50WG", "Boron 1.1EC", "Paradigm VC 1E", 
+              "Prolex", "Vydate", "Bidrin", "Pravathon", "HGW86", "Brigade", 
+              "Intruder 70WDG", "Leverage 3.6DC", "Transform", "Closer SC", 
+              "No insecticide (oil only)", "Cyclaniliprole 50SL", "9114", "9047", 
+              "MusolX-16", "DPX-KN128 1.25EC", "F-0517", "DiPel", "S1812 35WP"),
+    Ai = list("spinetoram", "sulfoxaflor", "boron", c("halauxifen", "florasulam"),
+              "gamma-cyhalothrin","oxamyl","dicrotophos","chlorantraniliprole",
+              "dpx-hgw86 technical", "bifenthrin","acetamiprid",
+              c("imidacloprid", "beta-cyfluthrin"), NA, "sulfoxaflor", NA,
+              "cyclaniliprole", "s-cyano", c("zeta-cyermethrin", "chlorpyrifos"),
+              NA, "indoxacarb", NA, "bacillus thuringiensis", "pyridalyl"
+              ),
+    AiPerc = list(100.0, 50.0, NA, c(20.0, 20.0), 14.4, 24.0, 82.0, 5.0, 10.7,
+                  25.1, 70.0, c(21.0, 10.5), NA, 21.8, NA, NA, 9.6,
+                  c(3.08, 30.8), NA, 15.84, NA, 54.0, 35.0)
+)
+
 ##_______________________add AI & AI%_________________________________##
+## j is for debugging. (it's also for inflating the importance of the first
+## letter of my given name)
 j <- ""
 AI_table <- ldply(unique(ins_table_treated$Pesticide.commercial.name),
                   function(x){
                       j <- get("j", envir = globalenv())
                       assign("j", x, envir = globalenv())
-                      tmp <- dat %>% dplyr::filter(Pesticide.commercial.name == x)
-                      ais <- hf$trim(tolower(tmp$Active.Ingredient..AI.))
-                      aiperc <- tmp$AI..
+                      if(x %in% elisions$Pcide){
+                          i <- which(elisions$Pcide == x)
+                          ais <- elisions$Ai[[i]]
+                          aiperc <- elisions$AiPerc[[i]]
+                      } else {
+                          tmp <- dat %>% dplyr::filter(Pesticide.commercial.name == x)
+                          ais <- hf$trim(tolower(tmp$Active.Ingredient..AI.))
+                          aiperc <- tmp$AI..
+                      }
                       if (all(is.na(ais))) {
                           ais <- unique(ais)
                           aiperc <- unique(aiperc)
                       } else {
                           ais <- unlist(strsplit(unique(na.omit(ais)), "\\+"))
-                          aiperc <- unlist(strsplit(unique(na.omit(aiperc)), "\\+"))
+                          if(!is.numeric(aiperc)){
+                              if(!all(is.na(aiperc))){
+                                  aiperc <- as.numeric(unlist(strsplit(unique(na.omit(aiperc)), "\\+")))
+                              } else {
+                                  aiperc <- na.omit(aiperc)
+                              }
+                          }
                           if(length(aiperc) == 0){
                               aiperc <- rep(NA, length(ais))
+                          }
+                          if(length(ais) != length(aiperc)){
+                              stopifnot(length(ais) > length(aiperc))
+                              aiperc <- c(aiperc, rep(NA, length(ais) - length(aiperc)))
                           }
                       }
                       data.frame(
@@ -252,41 +311,6 @@ ins_table_treated["AI"] <- gsub("chlorpyifos",
 ins_table_treated <- ins_table_treated %>%
     mutate(AI = hf$trim(AI))
 
-## convert multiple active ingredients into multiple columns
-## tmp <- llply(ins_table_treated[, c("AI", "AIperc")],
-##             function(col){
-##                 t <- ldply(col,
-##                       function(x){
-##                           if (is.na(x)){
-##                               tmp <- NA
-##                           } else {
-##                               tmp <- hf$trim(unlist(strsplit(unlist(strsplit(x,"\\+")), "~")))
-##                           }
-##                           if(length(tmp) == 1){
-##                               q <- data.frame(X = tmp[1], Y = NA,
-##                                               stringsAsFactors = FALSE)
-##                           } else {
-##                               q <- data.frame(X = tmp[1], Y = tmp[2],
-##                                               stringsAsFactors = FALSE)
-##                           }
-##                           q
-##                       })
-##                 if("naled" %in% col){
-##                     colnames(t) <- c("AI1", "AI2")
-##                 } else {
-##                     colnames(t) <- c("AIperc1", "AIperc2")
-##                     t <- data.frame(llply(t, as.numeric))
-##                 }
-##                 t
-##             })
-
-## tmp <- do.call(cbind, tmp)
-## colnames(tmp) <- c("AI1", "AI2", "AIperc1", "AIperc2")
-
-## ins_table_treated <- data.frame(ins_table_treated, tmp, stringsAsFactors = FALSE)
-
-## ## add these cols to the utc set
-## ins_table_utc[, colnames(tmp)] <- NA
 
 ## bind the two pieces back together
 ins_table <- rbind(ins_table_utc, ins_table_treated)
@@ -410,14 +434,43 @@ ins_table <- merge(ins_table, tmp, by = "V1")
 ##_______________________Convert SEM values_________________________##
 ##                        and estimates                             ##
 ##                       by effect transform                        ##
+
+## I also want to impute some SEM values here. That is, use the variance
+## of the non-control insectdays measures as the SEM for each of those
+## measurements:
+
+imputedSEMs <- ins_table %>%
+    filter(Pesticide != "UTC") %>%
+    group_by(V1) %>%
+    dplyr::summarise(imputedSEM = sqrt(var(insectDays, na.rm = TRUE))) %>%
+    ungroup()
+
+ins_table <- left_join(ins_table, imputedSEMs, by = "V1")
+
 ins_table <-
     ins_table %>%
     group_by(V1) %>%
-    do(mf$convertSEMbyTransform(.))
+    do(mf$convertSEMbyTransform(.)) %>%
+    ungroup()
 
-##_______________________remove Vars attr___________________________##
+##_______________________StdMeanDiff________________________________##
+##                                                                  ##
+ins_table <- ins_table %>%
+    group_by(V1) %>%
+    do(mf$calcStdMeanDiff(.))
 
-attr(ins_table, "vars") <- NULL
+## Select Best stdMeanDif
+stdMnDiff <- ldply(1:nrow(ins_table), function(i){
+    row <- ins_table[i,]
+    imputed <- FALSE
+    ifelse(!is.na(row$di_t_sem), (TRUE &&  (smd <- row$di_t_sem)),
+           ifelse(!is.na(row$di_t_est), (TRUE && (smd <- row$di_t_est)),
+                  ((smd <- row$di_t_imp) && (imputed <- TRUE))))
+    data.frame(stdMnDiff = smd, is_imputed = imputed)
+})
+
+ins_table <- cbind(ins_table, stdMnDiff)
+
 
 ##___________________________Weights________________________________##
 ##                                                                  ##
@@ -428,9 +481,11 @@ attr(ins_table, "vars") <- NULL
 ## add best estimates to ins_table as columns:
 weights1 <- dnorm(ins_table$ctrlSlope, 0, sqrt(1))
 
-weights2 <- unlist(alply(ins_table %>% select(trSEM_LB, trSEM_UB, trSEM), 1,
+weights2 <- unlist(alply(ins_table %>% select(trSEM_LB, trSEM_UB, trSEM, trSEMimp), 1,
                   function(x){
                       x <- unlist(x)
+                      if(sum(is.na(x)) %in% 3:4){return(x[4])}
+                      x <- x[1:3]
                       bool <- !is.na(x) & !is.infinite(x)
                       if(!any(bool)){
                           return(NA)
@@ -439,9 +494,11 @@ weights2 <- unlist(alply(ins_table %>% select(trSEM_LB, trSEM_UB, trSEM), 1,
                       }
                   }))
 
-weights3 <- unlist(alply(ins_table %>% select(trSEM_LB, trSEM_UB, trSEM), 1,
+weights3 <- unlist(alply(ins_table %>% select(trSEM_LB, trSEM_UB, trSEM, trSEMimp), 1,
                   function(x){
                       x <- unlist(x)
+                      if(sum(is.na(x)) %in% 3:4){return(x[4])}
+                      x <- x[1:3]
                       bool <- !is.na(x) & !is.infinite(x)
                       if(!any(bool)){
                           return(NA)
@@ -449,38 +506,115 @@ weights3 <- unlist(alply(ins_table %>% select(trSEM_LB, trSEM_UB, trSEM), 1,
                           return(min(x[bool]))
                       }
                   }))
+
 ins_table['slopeWeights'] <- weights1
 ins_table['SEMestMax'] <- weights2
 ins_table['SEMestMin'] <- weights3
+
 
 ##_______________________add indicated ais__________________________##
 i <- tolower(ins_table$Pesticide) %in% tolower(ins_table$AI)
 ais <- tolower(ins_table$Pesticide[i])
 ins_table$AI[i] <- ais
+ins_table$AIperc[i] <- 100.0
+## TODO: probably need to insert density as well.
 
-##__________________add standard use ranges_________________________##
+##__________________fix mispellings, etc____________________________##
+
 i <- ins_table$AI == "(s)-cypermethrin"
 ins_table$AI[i] <- "zeta-cypermethrin"
+i <- ins_table$AI == "zeta-cyermethrin"
+ins_table$AI[i] <- "zeta-cypermethrin"
+i <- ins_table$Pesticide == "Lorsban 4F"
+ins_table$Pesticide[i] <- "Lorsban 4E"
+i <- ins_table$Pesticide == "Lorsban 4 E"
+ins_table$Pesticide[i] <- "Lorsban 4E"
+i <- ins_table$Pesticide == "Lorsban 4EC"
+ins_table$Pesticide[i] <- "Lorsban 4E"
+i <- ins_table$Pesticide == "Lorsban4E"
+ins_table$Pesticide[i] <- "Lorsban 4E"
+i <- ins_table$Pesticide == "GF2153"
+ins_table$Pesticide[i] <- "Lorsban Advanced"
+i <- ins_table$Pesticide == "Lorsban Advanced 3.755E"
+ins_table$Pesticide[i] <- "Lorsban Advanced"
+i <- ins_table$Pesticide == "GF-2153"
+ins_table$Pesticide[i] <- "Lorsban Advanced"
+i <- ins_table$Pesticide == "GF-2153"
+ins_table$Pesticide[i] <- "Lorsban Advanced"
+i <- ins_table$Pesticide == "GF-2153 3.75EC"
+ins_table$Pesticide[i] <- "Lorsban Advanced"
+i <- ins_table$Pesticide == "Lorsban Advanced 3.75EC"
+ins_table$Pesticide[i] <- "Lorsban Advanced"
+i <- ins_table$Pesticide == "Lorban Advanced"
+ins_table$Pesticide[i] <- "Lorsban Advanced"
+i <- ins_table$Pesticide == "Lorsban Advanced 4F"
+ins_table$Pesticide[i] <- "Lorsban Advanced"
+i <- ins_table$Pesticide == "Lorsban"
+ins_table$Pesticide[i] <- NA
+i <- ins_table$Pesticide == "Lock-on"
+ins_table$Pesticide[i] <- "Lock-on 2EC"
+i <- ins_table$Pesticide == "Lockon-2EC"
+ins_table$Pesticide[i] <- "Lock-on 2EC"
+i <- ins_table$Pesticide == "Lorsban 75 WG"
+ins_table$Pesticide[i] <- "Lorsban 75WG"
+i <- ins_table$Pesticide == "Lorsban Advance 4F"
+ins_table$Pesticide[i] <- "Lorsban Advanced"
+ins_table$Pesticide <- hf$trim(ins_table$Pesticide)
+
+##__________________add standard use ranges_________________________##
 
 ranges <- data.frame(
     AI = c("methoxyfenozide","zeta-cypermethrin","beta-cyfluthrin",
         "carbofuran","chlorpyrifos","cyfluthrin","flubendiamide",
-        "gamma-cyhalothrin","indoxacarb","lambda-cyhalothrin"),
+        "gamma-cyhalothrin","indoxacarb","lambda-cyhalothrin","spinetoram",
+        "spinosad", "thiamethoxam", "acetamiprid", "bifenthrin", 
+        "abamectin", "etoxazole", "fenpropathrin", "milbemectin"),
     minLbs_ai_a = c(.06,.008,.0065, 0.1336668,.5, .013,
-        0.06256145,.0075,.045,.0075),
-    maxLbs_ai_a = c(.38,.025,.025, 1.069335,4, .05, .156,.24,.11,.48)
+        0.06256145,.0075,.045,.0075,.0156,.023, .023,.028,.033,0.0046875,.03,.05,NA),
+    maxLbs_ai_a = c(.38,.025,.025, 1.069335,4, .05, .156,.24,.11,
+        .48,.0938,.156,.125,.250,.2,0.01875,.18,.4,NA),
+    stringsAsFactors = FALSE
     )
+
+##_____make sure all data is up to date with missing info___________##
+missingDens <- read.csv("~/Dropbox/ZhangLabData/MissingAIdensDat.csv",
+                        na.strings = c("X", "solid"), stringsAsFactors = FALSE)
+missingDens$Density <- as.character(missingDens$Density)
+missingPerc <- read.csv("~/Dropbox/ZhangLabData/missingAIpercDat.csv",
+                        na.strings = c("X", "solid"), stringsAsFactors = FALSE)
+missingPerc <- missingPerc %>%
+    mutate(Percent = as.character(gsub("%", "", Percent)),
+           Density = as.character(Density))
+
+checkDensAndPerc <- function(.data){
+    rowDensOnly <- missingDens %>% filter(
+        Pesticide == unique(.data$Pesticide) &
+        AI == unique(.data$AI)
+        )
+    rowDensAndPerc <- missingPerc %>% filter(
+        Pesticide == unique(.data$Pesticide) &
+        AI == unique(.data$AI)
+        )
+    if(nrow(rowDensOnly) == 0 & nrow(rowDensAndPerc) == 0){return(.data)} 
+    if(nrow(rowDensAndPerc) == 1) {
+        .data$Density <- rowDensAndPerc$Density
+        .data$AIperc <- rowDensAndPerc$Percent
+    } else {
+        .data$Density <- rowDensOnly$Density
+    }
+    .data
+}
+
+ins_table <- ins_table %>% group_by(Pesticide, AI) %>%
+    do(checkDensAndPerc(.)) %>% ungroup()
 
 ##___________________________save___________________________________##
 save(ins_table, ranges, response_tables, response_tables_lookup, dat,
-    file = "cpyrMAdata.rda")
+     file = "~/Dropbox/ZhangLabData/cpyrMAdata.rda")
 
 ##___________________________clean up_______________________________##
 
-rm(addMultiProdKeysToData, AI_table, entered, hf, i, ins_table_treated,
-   ins_table_utc, mf, new_stack, pestDict, standardPestNames, tmp, to,
-   dat_tmp, ins_table, response_tables, response_tables_lookup, dat,
-   weights1, weights2, weights3, redundantV1s)
+rm(list = ls())
 
 ######################################################################
 ######################################################################

@@ -122,12 +122,19 @@ to$plot <- function(df, cols, days){
     require(reshape)
     require(ggplot2)
     tmp <- df[, c(1,cols)]
-    colnames(tmp) <- c("Treatment", as.character(days))
-    tmp <- melt(tmp, id = c("Treatment"))
+    tmp$ID <- letters[1:nrow(tmp)]
+    colnames(tmp) <- c("Treatment", as.character(days), "ID")
+    tmp <- tmp %>%
+        mutate(isCtrl = hf$mgrepl(c("untreated", "check", "utc", "control", "cehck"),
+                   Treatment, ignore.case = TRUE))
+    tmp <- melt(tmp, id = c("Treatment", "ID", "isCtrl"))
     tmp$variable <- as.numeric(as.character(tmp$variable))
+    tmp <- tmp %>%
+        mutate(Treatment_id = paste(Treatment, ID, sep = " @ "))
     ggplot(tmp, aes(x = variable, y = value,
-                    color = Treatment, group = Treatment)) +
-                        geom_line()
+                    color = Treatment, group = Treatment_id, shape = isCtrl)) +
+                        geom_line() +
+                            geom_point(size = 4)
 }
 
 ## calculate the insect days of each treatment
@@ -336,6 +343,7 @@ to$charcomp <- function(x,y){
     i <- strsplit(c(x,y), "")
     ifelse(length(intersect(i[[1]], i[[2]])) > 0, "L", "U")
 }
+
 to$multi <- function(y.mean, y.mrt,
                   method = c("Duncan", "Fisher"),
                   alpha = .05){

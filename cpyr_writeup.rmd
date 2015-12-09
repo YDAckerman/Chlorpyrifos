@@ -111,6 +111,35 @@ weather, research habits, etc.).
 
 The Results
 --------------------------------------------------------------------------------
+The following plot displays the effect size and 95% interval of each treatment
+with both methods overlayed:
+
 ```{r, echo = FALSE, fig.width = 16, fig.height = 12, eval = TRUE}
 do.call(grid.arrange, grobs_weighted)
+```
+In the following tables, we represent both a numerical version of the above, as
+well as the 95% confidence intervals of the difference between the effect size
+of $chlorpyrifos-s$ and 95% confidence interval bounds of the alternative
+treatment. If this interval includes or sits above zero, then we cannot reject the hypothesis
+that the alternative and $chlorpyrifos-s$ are statistically the same at the 5%
+significance level.
+
+### LMER
+#### AW
+```{r, echo = FALSE}
+dsetsLMER[[1]]
+```
+#### PA
+```{r, echo = FALSE}
+dsetsLMER[[2]]
+```
+
+### MCMC
+#### AW
+```{r, echo = FALSE}
+dsetsMCMC[[1]]
+```
+#### PA
+```{r, echo = FALSE}
+dsetsMCMC[[2]]
 ```
