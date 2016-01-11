@@ -49,12 +49,5 @@ _*TODO*_
   * TODO writeup
     - implement mike's changes
 
-** TODO BEE
-  * edits to writeup
-  * DONE Calc #AI near each section
-    - instead of looking at # of (non-almond) bee-attractive crops,
-      look at how many different chemicals were used within 1-5
-      buffers of almond sections.
-  * see notes
 
 ** PDF
