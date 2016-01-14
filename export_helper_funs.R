@@ -119,16 +119,22 @@ ehf$getUnitColumnRange <- function(file, unit_index, t_index,
 
     ## find number of columns
     col_count <- ehf$getColCount(file, t_index)
+
+    ## some of the raw tables are spaced differently in their
+    ## respective csv files, so figure out what column they actually
+    ## start in:
+    offset <- sum(unlist(strsplit(file[[1]][t_index$start], ";"))[1:4] == "")
+    
     ## get the line that best groups the columns
     unit_line <- ehf$getUnitLine(file, unit_index, t_index, match_strings)
 
     ## find the best matches and keep the words matched
     ## for grouping purposes
-    col_ranges <- ehf$getGrpRanges(unit_line, match_strings, col_count)
+    col_ranges <- ehf$getGrpRanges(unit_line, match_strings, col_count, offset)
 
     dates <- ehf$getColDates(file, unit_index, t_index)
     
-    list(columns = 2:(1 + col_count),
+    list(columns = 1 + offset : (1 + col_count),
          relevantRange = attr(col_ranges, "relevantCols"),
          allRanges = col_ranges, ## cols refer to post-extracted position
          pretreatCols = ehf$getPretreatCols(file, unit_index, t_index),
@@ -180,7 +186,7 @@ ehf$getColDates <- function(file, unit_index, t_index){
 ## the columns of data it describes. This function matches
 ## the pest units (sometimes multiple given in a single line of
 ## the main dataset) to the column ranges they describe.
-ehf$getGrpRanges <- function(unit_line, match_strings, col_count){
+ehf$getGrpRanges <- function(unit_line, match_strings, col_count, offset){
 
     ## the line comprised of pest units has already been found.
     ## the task now is to match, as best we can, the pest unit
@@ -254,7 +260,7 @@ ehf$getGrpRanges <- function(unit_line, match_strings, col_count){
     ## in the raw data)
     current_grp <- NA
     col_grps <- c()
-    col_range <- 2:(1 + col_count)
+    col_range <- 1 + offset : (1 + col_count)
 
     ## for loop for clarity's sake
     for (word in str_comparisons$words) {
@@ -420,8 +426,7 @@ ehf$getResponseTables <- function(row){
                       cols = colRanges$columns)
 
     attr(tble, "info") <- colRanges[2:5]
-    valid_column_names <- make.names(names = names(tble), unique = TRUE, allow_ = TRUE)
-    names(tble) <- valid_column_names
+    names(tble) <- make.names(names = names(tble), unique = TRUE, allow_ = TRUE)
     tble
 }
 
