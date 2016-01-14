@@ -109,7 +109,7 @@ ehf$getUnitIndex <- function(file, tbl_range, unit_id, loc, insect_id){
     tbl_range[which.max(str_comparisons)]
 }
 
-## returns the range of columns relevant to the  specified
+## returns the range of columns relevant to the specified
 ## insect units. If there aren't multiple units combined
 ## in the same table, returns NA.
 ehf$getUnitColumnRange <- function(file, unit_index, t_index,
@@ -136,34 +136,71 @@ ehf$getUnitColumnRange <- function(file, unit_index, t_index,
 
 }
 
+## retrieve a list of the dates found as column headers in the
+## extracted datatable, as well as their column numbers.
 ehf$getColDates <- function(file, unit_index, t_index){
-
+    ## this only gets things that are in date form,
+    ## no columns with names in the form of X.DAT are
+    ## returned.
     potential_unit_lines <- file[[1]][unit_index:(t_index$start)]
+    
+    ## fashion a regex to extract date strings
     date_regex <- "[0-9]{1,2}-[a-zA-Z]{3}-[0-9]{2,4}"
+
+    ## determine which rows in the table contain values
+    ## in date form
     i <- grep(date_regex, potential_unit_lines)
+
     if (length(i) == 0 ) { return(NA) }
+
+    ## if there are multiple such rows, consider only the lowest
     if (length(i) > 1 ) { i <- max(i) }
+
+    ## within the row of interest, extract the cells that
+    ## have date-headers
     date_col <- unlist(strsplit(potential_unit_lines[i], ";"))
+
+    ## convert to dates, julian dates
     dates <- strptime(date_col, "%d-%b-%y")
     julian <- julian(dates)
+
+    ## determine the column numbers of the stripped date-cells
     date_col_pos <- which(!is.na(dates))
+    
+    ## give the julian dates, the raw dates, and their column
+    ## positions in the table
     list(julian = na.omit(julian),
          rawDates = na.omit(as.character(dates)),
          pos = date_col_pos - 1)
 }
 
+## The excel tables frequently consist of multiple data tables
+## whose columns have been bound together. In the excel sheets,
+## this is indicated by a "Pest unit" header extending over all
+## the columns of data it describes. This function matches
+## the pest units (sometimes multiple given in a single line of
+## the main dataset) to the column ranges they describe.
 ehf$getGrpRanges <- function(unit_line, match_strings, col_count){
 
+    ## the line comprised of pest units has already been found.
+    ## the task now is to match, as best we can, the pest unit
+    ## string from the main datasheet to individual column groups.
+
+    ## see which column headers match with which parts of the
+    ## pest unit string
     str_comparisons <- ldply(unit_line, function(x){
         word <- NA
         bool <- FALSE
         len <- NA
         if (x != "" & !grepl("note", x, ignore.case = TRUE)){
-            x <- hf$removeParens(x)
+            word <- x <- hf$removeParens(x)
             bool <- hf$stringContains(x, match_strings)
             len <- length(hf$stringIntersect(x, match_strings))
-            word <- x
         }
+        ## return the results as a data frame holding the
+        ## number of word-matches, whether or not the word is in
+        ## both the unit line and the pest unit string (it's relevance,
+        ## represented as TRUE or FALSE), and the word itself
         data.frame(lens = len,
                    bools = bool,
                    words = word, 
@@ -182,21 +219,31 @@ ehf$getGrpRanges <- function(unit_line, match_strings, col_count){
         ##     filter(lens == max(lens, na.rm = TRUE) & !grepl("%", words)) %>%
         ##     select(words)))
 
+        ## use the number of matched words to select which set of
+        ## columns is the most relevant. We depend here on the integrity of
+        ## the data relating the two datasheets.
         relevant_cols_names <-                                
             (str_comparisons %>%                                             
                 filter(lens == max(lens, na.rm = TRUE) & !grepl("%", words)) %>%
                     distinct(words) %>%
                         select(words))$words
 
+        ## sometimes there are not matches. This should trigger an error.
         if(length(relevant_cols_names) == 0){
-            mess <- paste("there are no relevant columns in") ##, get("pdf", envir = parent.frame(n = 2)), ": ", get("tbl_ind", envir = parent.frame(n = 2)), "?")
+            mess <- paste("there are no relevant columns in")
+            ## should you wish further identification of the problem
+            ## table, add these into the paste:
+            ##, get("pdf", envir = parent.frame(n = 2)), ": ",
+            ## get("tbl_ind", envir = parent.frame(n = 2)), "?")
             stop(mess)
         }
-        
+
+        ## get a list of all the column names that matched:
         all_cols_names <- unlist(unique(
             str_comparisons %>%
             filter(!is.na(lens)) %>%
             select(words)))
+        
     } else {
         ## if there's an exact match, then no % can be present
         all_cols_names <- unique(str_comparisons$words[str_comparisons$bools])

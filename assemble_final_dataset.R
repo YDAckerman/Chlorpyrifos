@@ -155,10 +155,13 @@ expTrt <- finalDataSet %>%
 ## remove studies that would lead to unstable variance estimates
 finalDataSet <- semi_join(finalDataSet, expTrt, by = "Experiment")
 
+## weird "NA" cropping up, simple solution:
+finalDataSet$AI[finalDataSet$AI == "NA"] <- NA
+
 ## calculate this only after you've paired down to your desired dataset:
 ## vcov_mat <- bldiag(lapply(split(finalDataSet, finalDataSet$Experiment), mf$vcov))
 
-i <- which(finalDataSet$SEMestMax == 0)
+## i <- which(finalDataSet$SEMestMax == 0)
 
 if(summary){
 
