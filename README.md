@@ -66,7 +66,7 @@ proceed with our analysis without taking it into accound.
 Another method to address this problem is layed out in
 Belova et al 2013. With this method, each AI is divided into three categories
 based on msds recommendations: those applied below the recommended range of
-useage (labelled $l$); those within the
+usage (labelled $l$); those within the
 recommended range of usage (labelled $s$); and those above the recommended range
 ($h$). Each category within a single AI group is then treated as a distinct
 treatment type. Thus instead of treaments like .01 lbs Chlorpyrifos
