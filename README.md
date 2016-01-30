@@ -102,9 +102,13 @@ The Analysis
 We made use of two statistical methods in our analysis: Bayesian Monte Carlo
 Markov Chain (MCMC) and Linear Mixed Effect Model (LMER) regressions. Both
 methods were used to test the following model:
+
 $$ \text{d}_{i}^{T} \sim \text{Normal}(\mu_{i}^{T}, \sigma_{T}) $$
+
 $$ \mu_{i}^{T} = \alpha + \alpha_{i} + \beta\text{x}_{i}^{T} $$
+
 $$ \alpha_{i} \sim \text{Normal}(0, \sigma_{i}) $$
+
 Where $\text{d}_{i}^{T}$ is the test statistic of treatment $T$ of experiment $i$
 and $\text{x}_{i}^{T}$ is the categorical variable describing the AI used in
 treatment $T$ of experiment $i$. And where $\alpha_{i}$ is a sample drawn from the
