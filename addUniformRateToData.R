@@ -1,189 +1,321 @@
+############################################################
+## work flow to concetenate all of the cpyr main files
+## author: Yoni Ackerman
+## contact: jdackerma@ucdavis.edu
+############################################################
+
+## import libraries
 library(dplyr)
 library(plyr)
 library(stringdist)
 library(chron)
+library(data.table)
 
+## source massage functions and helper functions environments
 source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 source("~/Documents/ZhangLab/R/Chlorpyrifos/massage_functions.R")
 
-files = list("~/Dropbox/ZhangLabData/ExcelData/Data-allCpyr-withAI.csv",
-        "~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-Mike.csv",
-        "~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Jess.csv")
+## these are all the cpyr main files:
+files = list(
+    "~/Dropbox/ZhangLabData/ExcelData/Data-allCpyr-withAI.csv",
+    "~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-Mike.csv",
+    "~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Jess.csv",
+    "~/Dropbox/ZhangLabData/ExcelData/Data-TwoMoreCPYR.csv"
+    )
 
-dat <- llply(files, function(file){
-    d <- read.csv(file,
-                  stringsAsFactors = FALSE,
-                  na.strings = c("", "uncertain", "unknown",
-                      "unknown formulation", "unclear",
-                      "not specified", "not stated", "seed treatment date not specified"))
-})
+## read in the pur-cpyr product data files (there are multiples
+## because they were created as the datasets themselves arose, hence:
+## TODO: concatenate into one efficient product file)
 
-## check to see if all products in the new data are in the old:
-## products_new <- unique(c(dat[[2]]$Pesticide.commercial.name, dat[[3]]$Pesticide.commercial.name))
-## products_old <- unique(dat[[1]]$Pesticide.commercial.name)
+## original
+prod_data_cpyr <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Products-CPYR.csv",
+                           stringsAsFactors = FALSE, na.strings = c("", "?????", "not known",
+                                                         "not specified", "product name ambiguous", "unknown")) %>%
+    dplyr::rename(DPR.Label.Database.name = DPR.Name,
+                  SpecGravOrDensity = Density,
+                  AI.1 = AI1,
+                  AI.2 = AI2,
+                  AI.3 = AI3,
+                  chem_prod_notes = Notes,
+                  ChemicalType = Type,
+                  DPR.Prodno = ProdNo
+                  )
 
-## guesses <- ldply(products_new, function(x){
-##     guess <- grep(x, products_old, ignore.case = TRUE, value = TRUE)
-##     is.na(x) && return(data.frame(product = x, guess = NA))
-##     if(length(guess) == 0){
-##         i <- which.min(stringdist(tolower(x), tolower(products_old)))
-##         if(length(i) == 0){
-##             d <- data.frame(product = x, guess = NA)
-##         } else {
-##             d <- data.frame(product = x, guess = products_old[i])
-##         }
-##     } else {
-##         i <- which.min(stringdist(tolower(x), tolower(guess)))
-##         d <- data.frame(product = x, guess = guess[i])    
-##     }
-##     d
+## non-cpyr, just in case it has anything the original couldn't find
+prod_data <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Products-nonCPYR.csv",
+                      stringsAsFactors = FALSE, na.strings = c("", "?????", "not known",
+                                                    "not specified", "product name ambiguous", "unknown"))  %>%
+    dplyr::rename(AI.2 = AI.number.2,
+                  chem_prod_notes = Notes,
+                  AI.1 = AI1,
+                  SpecGravOrDensity = Sp.Grav..liq.,
+                  Pesticide.commercial.name = Product.name..from.article.)
+
+## the two additional tables added at the end
+prod_data_two_more <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Products-TwoMoreCPYR.csv",
+                      stringsAsFactors = FALSE, na.strings = c("", "?????", "not known",
+                                                    "not specified", "product name ambiguous", "unknown"))  %>%
+    dplyr::rename(DPR.Label.Database.name = DPR.Name,
+                  SpecGravOrDensity = Density,
+                  AI.1 = AI1,
+                  AI.2 = AI2,
+                  AI.3 = AI3,
+                  chem_prod_notes = Notes,
+                  DPR.Prodno = Prodno,
+                  Pesticide.commercial.name = Product.name.from.article
+                  )
+
+## look at that - easy! now they're one dataframe
+prod_data <- rbindlist(list(prod_data, prod_data_cpyr, prod_data_two_more), use.names = TRUE, fill = TRUE)
+
+## import all the main files into a list
+dat <- llply(files, function(f){ read.csv(f, stringsAsFactors = FALSE,
+                                          na.strings = c("", "not specified", "???", "uncertain",
+                                              "unknown", "unknown formulation", "unclear",
+                                              "not specified", "not stated",
+                                              "seed treatment date not specified",
+                                              "Not specified", "Not Spec", "not known",
+                                              "[could not find MSDS only label]")) }, .progress = "text")
+
+## for each dataframe, loop through and make each correction
+tmp <- llply(dat, mf$correctDfCols)
+
+## bind the dataframes into one
+dat <- as.data.frame(rbindlist(tmp, fill = TRUE, use.names = TRUE))
+
+
+####### Corrections and cleaning:
+
+i <- grepl("oz/100 gal Product/Acre", dat$Application.rate.units)
+dat$Application.rate.units[i] <- "oz product/100 gal"
+## Adjuvant units had no errors of this type
+
+## Extra commas at end of either “application” or “measurement” date list
+for (column in c("Treatment.dates", "Dates.checked")) {
+    dat[, column] <- gsub(",(?!.)", "", dat[, column], perl = TRUE)
+}
+
+## remove/replace:
+## trailing whitespace and newline chars from product names
+## trailing commas
+## mispellings
+dat$Pesticide.commercial.name <- hf$trim(dat$Pesticide.commercial.name)
+dat$Pesticide.commercial.name <- gsub("\\\n", "", dat$Pesticide.commercial.name)
+dat$Pesticide.commercial.name <- gsub(",(?!.)", "", dat$Pesticide.commercial.name, perl =  TRUE)
+dat$Pesticide.commercial.name <- gsub("Dispress", "Disperss", dat$Pesticide.commercial.name)
+dat$Pesticide.commercial.name <- gsub("xx", "x", dat$Pesticide.commercial.name)
+dat$Pesticide.commercial.name <- gsub("Imidian", "Imidan", dat$Pesticide.commercial.name)
+dat$Pesticide.commercial.name <- gsub("Weather Stick", "weather stik", dat$Pesticide.commercial.name)
+dat$Pesticide.commercial.name <- gsub("\\’", "\\'", dat$Pesticide.commercial.name)
+dat$Pesticide.commercial.name <- gsub("\\\"", "", dat$Pesticide.commercial.name)
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Check" |
+                                  dat$Pesticide.commercial.name == "Water control" |
+                                  dat$Pesticide.commercial.name == "Water only")] <- NA
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "none")] <- NA
+
+## remove dupicate rownumber column
+dat <- dat %>% dplyr::select(-X.1)
+
+## Add AI column and change AI = experimental where Pesticide is any variation of exp
+dat$AI[grep("^exp", dat$Pesticide.commercial.name, ignore.case = TRUE, perl = TRUE)] <- "experimental"
+
+####### End corrections and Cleaning
+
+## now we want to merge the pur product information into the dataframes.
+## todo this, we'll create a temporary dataframe with a 'smushed' variable.
+## Any product names that differ only by spaces/letter cases will then be
+## the same. This works pretty well, unless there is an egregious error
+## in two product strings that should be the same
+
+prods <- as.character(unique(dat$Pesticide.commercial.name))
+prods_df <- data.frame(Pesticide.commercial.name = prods,
+                       smushed = tolower(gsub(" ","", gsub("-","", prods))),
+                       stringsAsFactors = FALSE) %>%
+    filter(smushed != "")
+
+## use prods_df to select one variation for each unique 'smushed' value,
+## choosing by length of the variation
+fixed_prod_names <- prods_df %>%
+    mutate(len = nchar(Pesticide.commercial.name)) %>%
+    dplyr::group_by(smushed) %>%
+    dplyr::arrange(len) %>%
+    dplyr::top_n(1) %>%
+    dplyr::slice(1) %>%
+    dplyr::ungroup() %>%
+    dplyr::rename(standardized_product_name = Pesticide.commercial.name)
+
+## fold prods_df back on itself to get a new dataframe (of the same name)
+## that contains each product and it's standardized name (the 'new' variable)
+prods_df <- left_join(prods_df, fixed_prod_names, by = "smushed") %>%
+    dplyr::select(Pesticide.commercial.name, standardized_product_name)
+
+## join prods_df into d
+tmp <- left_join(dat, prods_df, by = "Pesticide.commercial.name")
+
+## change Pesticide.commercial.name to it's standardized equivalent
+dat <- tmp %>%
+    dplyr::rename(Dirty.Old.Pesticide.name = Pesticide.commercial.name,
+           Pesticide.commercial.name = standardized_product_name
+           )
+
+
+####### MORE CLEANING AND EDITING - these are the egregious errors mentioned above
+
+## individual text fixes. 
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "A Pristine 38WDG")] <- "Pristine 38WDG"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "B5028 20.0 oz")] <- "B5028"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Bloomtime Bio 10^7")] <- "Bloomtime Bio"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Bloomtime Bio 10^8")] <- "Bloomtime Bio"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Beseige 1.25ZC")] <- "Besiege 1.25ZC"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Beseige")] <- "Besiege"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Captan 50 WP (2x)")] <- "Captan 50 WP"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Carpovirusine 1x10^13 AS")] <- "Carpovirusine AS"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Carpo-virusine 1×10^13 AS")] <- "Carpovirusine AS"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Carzol 90SP2")] <- "Carzol 90SP"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Carzol 90SP2")] <- "Carzol 90SP"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Carzol 90SP2")] <- "Carzol 90SP"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Cobalt 2.54EC")] <- "Cobalt 2.55EC"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Phyton-016-B")] <- "Phyton 016-B"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Cyd-X 3.3×10^13 AS")] <- "Cyd-X"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "F-0570 0.8EW")] <- "F-0570 0.8EC"
+
+i <- which(dat$Pesticide.commercial.name == "Eco 4000 0.05% (v/v)")
+dat$Pesticide.commercial.name[i] <- "Eco 4000"
+dat$Application.rate[i] <- "0.05% (v/v)"
+i <- which(dat$Pesticide.commercial.name == "Eco 4000 0.075% (v/v)")
+dat$Pesticide.commercial.name[i] <- "Eco 4000"
+dat$Application.rate[i] <- "0.075% (v/v)"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Endigo ZCX")] <- "Endigo ZC"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "f/b Success")] <- "Success"
+
+i <- which(dat$Pesticide.commercial.name == "Harpin 24-hr feeding time")
+dat$Pesticide.commercial.name[i] <- "Harpin"
+dat$Application.rate.units[i] <- "24-hr feeding time"
+i <- which(dat$Pesticide.commercial.name == "Harpin 48-hr feeding time")
+dat$Pesticide.commercial.name[i] <- "Harpin"
+dat$Application.rate.units[i] <- "48-hr feeding time"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Isopropyl alcohol.")] <- "Isopropyl alcohol"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Kaoil")] <- "Kaolin"
+
+i <- which(dat$Pesticide.commercial.name == "Kaoil 24-hr feeding time")
+dat$Pesticide.commercial.name[i] <- "Kaolin"
+dat$Application.rate.units[i] <- "24-hr feeding time"
+i <- which(dat$Pesticide.commercial.name == "Kaolin 48 h feeding time")
+dat$Pesticide.commercial.name[i] <- "Kaolin"
+dat$Application.rate.units[i] <- "48-hr feeding time"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Maneb 75DF 2.0")] <- "Maneb 75DF"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Maneb 75DF 1.5")] <- "Maneb 75DF"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "MBI-203")] <- "MBI 203"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "MBI-206")] <- "MBI 206"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Merit 75WP 0.20")] <- "Merit 75WP"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Micro 108 (1exp7 cfu/ml)")] <- "Micro 108"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "MSMA (?) (18.0%)")] <- "MSMA (18.0%)"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "MSMA (?) (9.81%)")] <- "MSMA (9.81%)"
+                            
+i <- which(dat$Pesticide.commercial.name == "Pristine 12.5 oz")
+dat$Pesticide.commercial.name[i] <- "Pristine"
+dat$Application.rate[i] <- "12.5 oz"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Proclaim + Dyne-amic")] <- "Proclaim"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Purespray Green oi")] <- "Purespray Green"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "PureSpray Green oil")] <- "Purespray Green"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Prev-Am")] <- "Prev AM"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "QRD 146 (3x)")] <- "QRD 146"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "QRD-146 (3x)")] <- "QRD 146"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Rovral (2x)")] <- "Rovral"
+
+i <- which(dat$Pesticide.commercial.name == "Saf-T-Side 1% V/V")
+dat$Pesticide.commercial.name[i] <- "Saf-T-Side"
+dat$Application.rate[i] <- "1% V/V"
+
+i <- which(dat$Pesticide.commercial.name == "Silwet L-77 0.023% v/v")
+dat$Pesticide.commercial.name[i] <- "Silwet L-77"
+dat$Application.rate[i] <- "0.023% v/v"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Sesamin EC 9.34")] <- "Sesamin EC"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Silwet L-77 control")] <- "Silwet L-77"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Sonalan HFX")] <- "Sonalan HFP"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Sonata ASO at")] <- "Sonata ASO"
+
+i <- which(dat$Pesticide.commercial.name == "Sporan 38% 96 fl oz")
+dat$Pesticide.commercial.name[i] <- "Sporan 38% EC"
+dat$Application.rate[i] <- "96 fl oz"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Spotlight (fgluroxypyr 26.2%)")] <- "Spotlight (fluroxypyr 26.2%)"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Stylet-oil (before bloom)")] <- "Stylet-oil"
+
+i <- which(dat$Pesticide.commercial.name == "Stylet Oil 1% V/V")
+dat$Pesticide.commercial.name[i] <- "Stylet Oil"
+dat$Application.rate[i] <- "1% V/V"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Topgurad")] <- "Topguard"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Tourney G 3")] <- "Tourney G"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Topsin M 70W P")] <- "Topsin M 70WP"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Topsin-M")] <- "Topsin M"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "26 GT 2SC")] <- "26GT 2SC"
+
+i <- which(dat$Pesticide.commercial.name == "Trilogy 1% V/V")
+dat$Pesticide.commercial.name[i] <- "Trilogy"
+dat$Application.rate[i] <- "1% V/V"
+
+i <- which(dat$Pesticide.commercial.name == "LI 6365, 10 fl oz")
+dat$Pesticide.commercial.name[i] <- "LI 6365"
+dat$Application.rate[i] <- "10 fl oz"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "TrisStar 70WSP")] <- "TriStar 70WSP"
+
+i <- which(dat$Pesticide.commercial.name == "Valero 1% V/V")
+dat$Pesticide.commercial.name[i] <- "Valero"
+dat$Application.rate[i] <- "1% V/V"
+
+i <- which(dat$Pesticide.commercial.name == "Volck Supreme Oil 97.95% 1% V/V")
+dat$Pesticide.commercial.name[i] <- "Volck Supreme Oil 97.95%"
+dat$Application.rate[i] <- "1% V/V"
+
+i <- which(dat$Pesticide.commercial.name == "Volck Supreme Oil 1% V/V")
+dat$Pesticide.commercial.name[i] <- "Volck Supreme Oil"
+dat$Application.rate[i] <- "1% V/V"
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Window 2F")] <- "Widow 2F"
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "Ziram 75DF")] <- "Ziram 76DF"
+
+prod_data$Pesticide.commercial.name <- tolower(prod_data$Pesticide.commercial.name)
+dat$Pesticide.commercial.name <- tolower(dat$Pesticide.commercial.name)
+
+dat$Pesticide.commercial.name[which(dat$Pesticide.commercial.name == "movento 2sc")] <- "movento 2 sc"
+
+####### END CLEANING AND EDITING
+
+## ## perform a quality check, the ers data frame will contain any
+## ## products in the main data sheet that did not find their twin in
+## ## the pur-product dataframe:
+## bools <- ldply(unique(dat$Pesticide.commercial.name), function(x){
+##     data.frame(name = x, bool = any(x == prod_data$Pesticide.commercial.name),
+##                num = sum(x == prod_data$Pesticide.commercial.name), stringsAsFactors = FALSE)
 ## })
 
-## write.xlsx(guesses, file = "comparisons.xlsx")
+## ers <- bools %>% filter(!bool | num > 1)
 
-## ## went through by hand to find comparisons that don't look work:
-## guesses <- read.xlsx(file = "~/Documents/ZhangLab/comparisons.xlsx", sheetIndex = 1)
+## now that we're comfortable with all the corrections,
+## merge the product data into the main cpyr dataframe
+dat <- left_join(dat, prod_data, by = "Pesticide.commercial.name")
 
-## now go on abound and do further searching... Saved results as prodInfo.rda
+####### MORE CLEANING AND EDITING
+dat$Treatment.dates[which(dat$Treatment.dates == "Two unspecified dates (so this cell needs one comma: ,) among 4 stated treatment dates: 20 Jun 2013/8 Jul 2013/31 Jul 2013/23 Aug 2013")] <- "unspec, unspec, 20 Jun 2013, 8 Jul 2013, 31 Jul 2013, 23 Aug 2013"
+dat$Treatment.dates[which(dat$Treatment.dates == "8, 25 Sep, 2, 9, Oct 2009")] <- "8, 25 Sep, 2, 9 Oct 2009"
+dat$Treatment.dates[which(dat$Treatment.dates == "8, 21, 23, 25, 28, 30 Sep, 2, 5, 7, 9, 12 Oct 2009")] <-
+    "8, 21, 23, 25, 28, 30 Sep, 2, 5, 7, 9, 12 Oct 2009"
+dat$Treatment.dates[which(dat$Treatment.dates == "Article only mentions only that various treatments were done in \"pre-bloom\" \"during bloom\" and/or \"post-bloom\" times.")] <- NA
+####### END CLEANING AND EDITING
 
-load("~/Dropbox/ZhangLabData/prodInfo.rda")
 
-## the number after the product name can be one of two things: part of the name or an indication of
-## the amount of active ingredient in the product. To deal with this, in stead of doing string matching
-## I should do string intersections.
-
-completed_cases <- prods %>% filter(check == "z")
-
-## incomplete_cases <- prods %>% filter(check != "z")
-
-## guesses <- ldply(1:nrow(incomplete_cases), function(i){
-##     row <- incomplete_cases[i,]
-##     original <- gsub("Mustang Max", "MustangMax", row$original)
-##     prod_reduc <- hf$trim(hf$removeParens(gsub("[%\\.]", "", gsub("\\w*\\d\\w*", "", original))))
-##     guesses <- grep(prod_reduc, pur_prod$product_name, ignore.case = TRUE, value = TRUE)
-##     if(length(guesses) == 0 | length(guesses) == nrow(pur_prod)){
-##         return(data.frame(row$original, best_guess = NA, num_matches = NA, stringsAsFactors = FALSE))
-##     }
-##     ranks <- unlist(llply(guesses, function(product){
-##         length(hf$stringIntersect(row$original, product))
-##     }))
-##     if(all(is.na(ranks))){
-##         return(data.frame(original, best_guess = NA, num_matches = NA, stringsAsFactors = FALSE))
-##     }
-##     top_rank <- max(ranks, na.rm = TRUE)
-##     sum(ranks == top_rank, na.rm = TRUE)
-##     guess <- guesses[which.max(ranks)]
-##     data.frame(row$original, best_guess = guess,
-##                num_matches = sum(ranks == top_rank, na.rm = TRUE),
-##                stringsAsFactors = FALSE)
-## })
-
-## write.csv(guesses, file = "guesses.csv")
-
-## I had to do a  lot of editing by hand...
-incomplete_cases <- read.csv(file = "~/Dropbox/ZhangLabData/prod_guesses.csv",
-                             header = TRUE, na.strings = c("NA", "Err:512")) %>%
-    select(original, best_guess)
-
-completed_cases <- completed_cases %>%
-    mutate(original = ifelse(original == "Err:512", NA, original),
-           product_name = ifelse(product_name == "Err:512", NA, product_name)) %>%
-    select(original, product_name)
-
-incomplete_cases <- ldply(1:nrow(incomplete_cases), function(i){
-    row <-incomplete_cases[i,]
-    original <- row$original
-    best_guess <- row$best_guess
-    if(is.na(original) | is.na(best_guess)){
-        return(data.frame(row, density = NA, prodno = NA))
-    } 
-    guesses <- pur_prod %>%
-        filter(product_name == best_guess)
-    last_updates <- as.Date(guesses$lastup_dt, format = "%d%m%Y")
-    if(all(is.na(last_updates))){
-        guesses <- guesses %>%
-            distinct(density, prodno) %>%
-                select(density, prodno)
-        if(nrow(guesses) > 1){
-            if(all(is.na(guesses$density))){
-                guesses <- guesses %>%
-                    select(density, prodno) %>%
-                        sample_n(1)
-            } else {
-                guesses <- guesses %>%
-                    filter(!is.na(density)) %>%
-                        select(density, prodno) %>%
-                            sample_n(1)
-                }
-        } else if(nrow(guesses) < 1){
-            stop(paste(best_guess, " and ", original, " doesn't provide enough information"))
-        }
-    } else {
-        guesses <- guesses[which.max(last_updates),] %>% select(density, prodno)
-    }
-    ## now output the right info
-    ##
-    return(data.frame(row, guesses, stringsAsFactors = FALSE))
-})
-
-incomplete_cases <- left_join(incomplete_cases, pur_udc, by = "prodno")
-incomplete_cases <- left_join(incomplete_cases, pur_chem %>% select(chem_code, chemname), by = "chem_code")
-
-incomplete_cases <- incomplete_cases %>%
-    dplyr::select(-prodno, -chem_code) %>%
-    dplyr::rename(Density = density,
-                  AI.. = prodchem_pct,
-                  Active.Ingredient..AI. = chemname,
-                  product_name = best_guess)
-
-completed_cases <- ldply(1:nrow(completed_cases), function(i){
-
-    i <- 9
-    row <- completed_cases[i,]
-    original <- row$original
-    product_name <- row$product_name
-    
-    if(is.na(original) | is.na(product_name)){
-        return(data.frame(row, Density = NA, Active.Ingredient..AI. = NA, AI.. = NA))
-    }
-    
-    guesses <- dat[[1]] %>%
-        mutate(Pesticide.commercial.name = hf$trim(Pesticide.commercial.name),
-               Active.Ingredient..AI. = tolower(Active.Ingredient..AI.)) %>%
-                   filter(Pesticide.commercial.name == product_name)
-    guesses <- guesses %>%
-        dplyr::distinct(Density, Active.Ingredient..AI., AI..) %>%
-        dplyr::select(Density,Active.Ingredient..AI.,AI..)
-    
-    if(nrow(guesses) != 1){
-        stop(paste(product_name, " and ", original, " doesn't provide enough information"))
-    }
-    return(data.frame(row, guesses, stringsAsFactors = FALSE))
-}, .inform = TRUE)
-
-## be careful: each active ingredient has its own row in incomplete_cases, whereas in completed_cases
-## all active ingredients are in one row (only 9 are like this, though...)
-new_data_pesticide_chem <-
-    rbind(completed_cases, incomplete_cases) %>%
-    dplyr::select(Pesticide.commercial.name = original,
-                  Density, Active.Ingredient..AI., AI..)
-    
-
-dat[[3]]$Plot.size = NA
-dat[[3]]$Subset.within.source..usually.column.or.panel. = NA
-
-dat_new <- rbind(dat[[2]], dat[[3]])
-dat <- dat[[1]]
-
-## tmp <- new_data_pesticide_chem %>%
-##     group_by(product_name) %>%
-##     dplyr::summarise(num_ai = length(unique(Active.Ingredient..AI.)))
-
-## surprise! there are no application counts for this data..........
-## [23] "Application.Counts"
-## luckily, there are application dates...
-
-Application.counts <-  unlist(llply(dat_new$Treatment.dates..incl..year.in.all.dates., function(val){
+## deduce the number of applications applied from the application
+## dates give in dat.
+Application.counts <-  unlist(llply(dat$Treatment.dates, function(val){
     if(is.na(val)){return(NA)}
     if(grepl("2\\*", val)) {return(2)}
     if(grepl("and", val)){
@@ -193,26 +325,31 @@ Application.counts <-  unlist(llply(dat_new$Treatment.dates..incl..year.in.all.d
     }
 }))
 
-dat_new$Application.Counts <- Application.counts
+## fill in using the deduced application counts where the
+## application counts variable in dat is empty
+dat$Application.Counts.tmp <- Application.counts
+dat <- dat %>%
+    dplyr::mutate(Application.Counts = ifelse(!is.na(Application.Counts), Application.Counts, Application.Counts.tmp)) %>%
+    dplyr::select(-Application.Counts.tmp)
 
-tmp <- mdply(dat_new %>% select(Application.rate, Application.rate.units), 
+## rename SpecGravOrDensity to Density 
+dat <- dat %>%
+    dplyr::mutate(Density = ifelse(!is.na(Density), as.character(Density), as.character(SpecGravOrDensity))) %>%
+    dplyr::select(-SpecGravOrDensity)
+
+## Convert the application rate and its units to their uniform counterparts
+tmp <- mdply(dat %>% select(Application.rate, Application.rate.units), 
              mf$convertToUniformRate, .expand = FALSE, .inform = TRUE) %>%
-    dplyr::select(Uniform.application.rate, Uniform.application.rate.units)
+    dplyr::select(Uniform.application.rate,  Uniform.application.rate.units)
 
-dat_new <- cbind(dat_new, tmp)
+## bind the uniform rate/units back with dat into a new
+## data frame (since I use dat so often)
+full_dat <- cbind(dat %>%
+                  dplyr::select(-Uniform.application.rate,
+                         -Uniform.application.rate.units), tmp)
 
-## dat_new now has application counts and Uniform.application.rate/units. Is it ready for a left_join?
-dat_new <- left_join(dat_new, new_data_pesticide_chem, by = "Pesticide.commercial.name")
+## clean up
+rm(list = setdiff(ls(), "full_dat"))
 
-## make both data sets have the same columns:
-l_ply(setdiff(colnames(dat), colnames(dat_new)), function(x){
-    dat_new[,x] <<- NA
-})
-l_ply(setdiff(colnames(dat_new), colnames(dat)), function(x){
-    dat[,x] <<- NA
-})
-
-## and in the darkness bind them
-full_dat <- rbind(dat, dat_new)
-
-save(full_dat, file = "full_data_set.rda")
+## and save
+## save(full_dat, file = "~/Dropbox/ZhangLabData/full_data_set.rda")

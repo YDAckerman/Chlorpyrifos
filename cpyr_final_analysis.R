@@ -23,8 +23,12 @@ options(dplyr.width = Inf)
 options(width = 100)
 ##_____________source: data dicts functions_______________##
 
-#source("R/assemble_&_massage_data.R")
+## source("R/assemble_&_massage_data.R")
 load("~/Dropbox/ZhangLabData/cpyrMAdata.rda")
+
+
+source("~/Documents/ZhangLab/R/Chlorpyrifos/assemble_final_dataset.R")
+## Gives: finalDataSet
 ## Gives: dat, ins_table, response_tables,
 ## & response_tables_lookup
 source("~/Documents/Coding/R/R_convenience/helper_functions.R")
@@ -99,6 +103,8 @@ full_meta_jacket <- FALSE
 ## with the introduction of the new data comes a few new things to
 ## keep in mind. For instance: multiple active ingredients now have,
 ## in some cases, multiple rows:
+
+## all of this is taken care of in the 'finalDataSet'
 a <- ins_table %>%
     group_by(Pesticide) %>%
     dplyr::summarise(num_ai = length(unique(AI))) %>%
@@ -339,6 +345,6 @@ grobs <- llply(dsetsMCMC, failwith(NA, function(c_d){
                     ggtitle(pest)
 }))
 
-## pdf("~/Dropbox/ZhangLabData/AIvsPest_10_16_15.pdf")
+## pdf("~/Dropbox/ZhangLabData/cpyrPlots/AiMetaAnalysis.pdf")
 ## g <- do.call(grid.arrange, grobs)
 ## dev.off()

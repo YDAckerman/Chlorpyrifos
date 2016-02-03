@@ -1,6 +1,14 @@
 ############################################################
-##       workflow to assemble and massage data            ##
+## workflow to assemble and massage data. Since so much
+## happens in this file, I tried to be more modular with
+## my commenting. 
+## author: Yoni Ackerman
+## contact: jdackerma@ucdavis.edu
 ############################################################
+
+# bring in the libraries
+library(plyr); library(dplyr)
+library(reshape2)
 
 ##____________set__working__ directory____________________##
 
@@ -12,60 +20,83 @@ options(dplyr.width = Inf)
 
 ##__________source:__data__dicts__functions_______________##
 
+source("addUniformRateToData.R")
+## gives "full_dat", which is a clean up and
+## merged version of all the cpyr data sets.
+
 ## source("R/create_pest_name_dict.R") yields:
 load("~/Dropbox/ZhangLabData/pestDictionary.rda")
 ## Gives: pestDict
 
+## if not run from cpyr_main, uncomment:
 ## source("R/export_multitable_excel_to.R") yields:
-load("~/Dropbox/ZhangLabData/response_data.rda")
+## load("~/Dropbox/ZhangLabData/response_data.rda")
 ## Gives: response_tables_lookup & response_tables
 
-source("massage_functions.R")
-## Gives: environment mf
-source("table_operations.R")
-## Gives: environment to
-source("create_unique_multiprod_keys.R")
-## Gives: addMultiProdKeysToData
-source("stack.R"); set.seed(0)
-## gives the class stack
+source("massage_functions.R") ## Gives: environment mf
+source("table_operations.R") ## Gives: environment to
+source("create_unique_multiprod_keys.R") ## Gives: addMultiProdKeysToData
+source("stack.R"); set.seed(0) ## gives the class stack
 
 ##_______________________workflow_________________________##
 ############################################################
 
-##__________________Get_______Data________________________##
+##__________________Get__Data_____________________________##
 
-dat <- addMultiProdKeysToData()
+dat <- addMultiProdKeysToData(full_dat) %>%
+    arrange(Original.sequence) 
 
-
-##__________________get all tables________________________##
-
-entered <- response_tables_lookup %>% filter(!is.na(V1))
+## these are the tables who were 'entered', i.e. their
+## v1-values aren't NA
+entered <- response_tables_lookup %>%
+    filter(!is.na(V1)) %>% 
+    do(mf$correctDfCols(.)) ## get correct column names
 
 ##__________________make ins_table_________________________##
-## llply has been giving me some serious shit.
+## llply has been giving me some trouble -> email hadley??
 
-## initiate stack:
-keys <- replicate(5000, paste(sample(c(letters,1:26), 12, replace = TRUE), collapse = ""))
+## initiate stack.
+## We'll use this to give every row in the dataset we're about
+## to generate a unique id.
+keys <- replicate(6000, paste(sample(c(letters,1:26), 12, replace = TRUE),
+                              collapse = ""))
 stack <- new_stack()
 stack$set(keys)
 
-j <- 0 ## this is for debugging, if an error get's thrown we'll know the index where it
-       ## occured.
+## this is for debugging, if an error
+##get's thrown we'll know the index where it
+## occured.
+j <- 0
+place <- 1
 
+## This loop will end up building an intermediary dataset
+## between the main/raw data and the finalDataSet data. It's
+## going to go through each entered 'raw' table and:
+## - calculate insect day measurements for each row
+## - determine how long the study went on
+## - calculate the SEM of the insect day measurement
+## - and estimate the insect day SEM if necessary
+## It will then combine these new columns with the
+## group columns matching the 'raw' tables V1-id to form
+## a new dataframe that can be seamlessly combined with all
+## the other newly transformed 'raw' dataframes
+## the last step (though it's in the first line), will be the
+## do.call(rbind(  which will bind all the new dataframes
+## together.
 ins_table <- do.call(rbind, lapply(1:nrow(entered), function(x){
+
     row <- entered[x, ]
     hash <- row$V1
     pre_ins_table <- response_tables[[hash]]
     tmp <- dat %>%
         dplyr::mutate(
-            Source..Fig.or.Table.number. = hf$trim(Source..Fig.or.Table.number.),
+            Source.Fig.or.Table.number = hf$trim(Source.Fig.or.Table.number),
             PDF.file.name = hf$trim(PDF.file.name)
             ) %>%
         filter(PDF.file.name == row$PDF.file.name &
-               Source..Fig.or.Table.number. == row$Source..Fig.or.Table.number.)
+               Source.Fig.or.Table.number == row$Source.Fig.or.Table.number)
     stopifnot(nrow(tmp) != 0)
-    col <- "StatTest..Duncan.s..Tukey..etc....incl..signif..level"
-    col <- paste0(col, "..and.any.data.transformation..e.g...log.x.1..")
+    col <- "StatTest"
     method <- unique(tmp[, col])
     method <- unique(ifelse(grepl("duncan", method, ignore.case = TRUE),
                             "Duncan", "Fisher"))
@@ -73,8 +104,10 @@ ins_table <- do.call(rbind, lapply(1:nrow(entered), function(x){
     operations <- c("insectDays", "studyDuration","insectDaysSEM", "EstimateSEM")
     pre_ins_tables <- llply(operations, function(operation){
         to$tableOperation(pre_ins_table, operation, method = method)
-    })
-    ## what is this doing? - oh Reduce!
+    }, .inform = TRUE)
+    ## before reducing, pull out the pretreatment column
+    pretreatCols <- attr(pre_ins_table, "info")$pretreatCols
+    ## Reduce! combine all the tables
     pre_ins_table <- Reduce(function(...) merge(..., all = TRUE), pre_ins_tables)
     ## pull from the merged tables the columns we want
     AScol <- setdiff(grep("adjuv", colnames(pre_ins_table), ignore.case = TRUE),
@@ -83,6 +116,24 @@ ins_table <- do.call(rbind, lapply(1:nrow(entered), function(x){
                                 ignore.case = TRUE),
                            grep("rate", colnames(pre_ins_table),
                                 ignore.case = TRUE))
+
+    ## deal with pretreatment columns
+    if(is.na(pretreatCols)){
+        ## if there are no pretreat columns, creat a new NA-filled column
+        ## named PreTreat
+        pre_ins_table$PreTreat <- NA
+    } else {
+        ## if there are pretreat columns, excise them, sum them along rows
+        ## and then assign the result to a new column called PreTreat
+        pretreatVals <- pre_ins_table[, pretreatCols]
+        if(length(pretreatCols) == 1){
+            pre_ins_table$PreTreat <- pretreatVals
+        } else {
+            pre_ins_table$PreTreat <- rowSums(pretreatVals)
+        }
+    }
+
+    ## select/rename the important rows of the 'raw' table
     slice <-
         pre_ins_table %>%
         select(Pesticide = 1,
@@ -95,29 +146,93 @@ ins_table <- do.call(rbind, lapply(1:nrow(entered), function(x){
                insectDaysSEM,
                MultProdNum = intersect(
                    contains("mult", ignore.case = TRUE),
-                   contains("prod", ignore.case = TRUE))
+                   contains("prod", ignore.case = TRUE)),
+               PreTreatmentPop = PreTreat
                )
+    
     if(length(AScol) == 1){ slice$AS <- pre_ins_table[, AScol] }
     else { slice$AS <- NA }
     if(length(ASrateCol) == 1){ slice$ASrate <- pre_ins_table[, ASrateCol] }
     else { slice$ASrate <- NA }
+    ## update j for 'debugging'
     j <- get("j", envir = globalenv())
     assign("j", j + 1, envir = globalenv())
     slice$Rate <- as.character(slice$Rate)
     slice$SampleID <- replicate(nrow(slice), stack$pop())
+
+    ## TODO: this is a work in progress - an attempt to get an
+    ## 'original sequence' 
+    place <- get("place", envir = globalenv())
+    slice$Original.sequence <- place:(place + nrow(slice) - 1)
+    assign("place", place + nrow(slice), globalenv())
     ## attach the columns to the identifying values from row
     ## and return.
     cbind(row, slice, row.names = NULL)
 }))
 
+##___________________standardize trtmnts_____________________##
+i <- hf$mgrep(c("untreated", "check", "utc", "control", "cehck", "water"),
+              ins_table$Pesticide, ignore.case = TRUE)
+ins_table$Pesticide[i] <- "UTC"
+
+
+
+## for some reason or another, data was allowed to be entered multiple
+## times. Let's fix that problem now:
+
+##_________________Remove Repeat Data________________________##
+
+## if we can find spots where the UTC is repeated, we'll
+## know the whole table is a duplicate:
+ins_table_utc <- ins_table %>% filter(Pesticide == "UTC")
+
+tmp <- ldply(1:nrow(ins_table_utc), function(i){
+    ## pretend its a loop and go through by rows
+    row <- ins_table[i,]
+    ## We're looking for repeats, so search ins_table for
+    ## any matches with itself in pesticide and insectdays,
+    ## but non-matches with the V1 table hash
+    slice <- ins_table %>% filter(Pesticide == row$Pesticide,
+                                  insectDays == row$insectDays,
+                                  V1 != row$V1)
+    ## if the slice is empty, we're alright
+    if(empty(slice)){
+        return(NULL)
+    }
+    ## otherwise, get the info:
+    data.frame(ID = row$V1,
+               Pesticide = row$Pesticide,
+               insectDays = row$insectDays,
+               pdf = row$PDF.file.name,
+               tbl = row$Source.Fig.or.Table.number,
+               repPDFs = paste(unique(slice$PDF.file.name), collapse = ";"),
+               reptbls = paste(unique(slice$Source.Fig.or.Table.number),
+                   collapse = ";"),
+               repIDs = paste(unique(slice$V1), collapse = ";"),
+               repInsectDays = paste(unique(slice$insectDays), collapse = ";"),
+               repPesticides = paste(unique(slice$Pesticide), collapse = ";"),
+               stringsAsFactors = FALSE)
+}, .progress = "text")
+
+repV1 <- c()
+for (i in 1:nrow(tmp)) {
+    V1 <- tmp$ID[i]
+    reps <- unlist(strsplit(tmp$repIDs[i], ";"))
+    b <- any(reps %in% repV1)
+    if(!b){
+        repV1 <- c(repV1, V1)
+    }
+}
+
+redundantV1s <- setdiff(unlist(strsplit(tmp$repIDs, ";")),repV1)
+
+ins_table <- ins_table %>% filter(!(V1 %in% redundantV1s))
+
+
 ## Rate is included for future joining purposes, so let's convert
 ## it to numeric:
 ins_table$Rate <- gsub("[^0-9\\.\\+]", "", ins_table$Rate)
 
-##___________________standardize trtmnts_____________________##
-i <- hf$mgrep(c("untreated", "check", "utc", "control", "cehck"),
-              ins_table$Pesticide, ignore.case = TRUE)
-ins_table$Pesticide[i] <- "UTC"
 
 ##________________edit number of replicates__________________##
 ins_table$Number.of.replicates <- as.numeric(ins_table$Number.of.replicates)
@@ -128,28 +243,18 @@ ins_table <-
     group_by(V1) %>%
     do(mf$calcPercent(., "UTC", "Pesticide", "insectDays"))
 
-## ## plyr
-## system.time(test1 <- ddply(ins_table, .(V1), function(x){
-##     mf$calcPercent(x, "UTC", "Treatment", "insectDays")
-## }))
-## ## dplyr
-## system.time(test2 <-
-##             ins_table %>%
-##             group_by(V1) %>%
-##             do(mf$calcPercent(., "UTC", "Treatment", "insectDays"))
-##             )
 
 ##__________________standardize insect names_________________##
-standardPestNames <- sapply(ins_table$Pest..as..common.name..scientific.name...if.both.given..if.not.just.enter.which.is.stated.in.article., function(x){
+standardPestNames <- unlist(sapply(ins_table$Pest.common.name, function(x){
     if (is.na(x)){ return(NA) }
     bools <- sapply(ls(pestDict), function(y){
         x %in% pestDict[[y]]
     })
+    if(sum(bools) == 0){return(NA)}
     ls(pestDict)[bools]
-})
+}))
 
 ins_table['Pest'] <- standardPestNames
-
 
 ## let's remove all the  UTC lines from ins_table in preparation
 ## for merging
@@ -183,9 +288,9 @@ tmp <- mf$cRate(ins_table_treated)
 
 ins_table_treated <- data.frame(ins_table_treated, tmp, stringsAsFactors = FALSE)
 
-## use this to find the problem children
+## use this to find the problematic entries
 ## test <- sapply(1:nrow(ins_table_treated), function(i){
-##     row <- ins_table_treated[i,]
+##     row <- ins_table_treated[i,]n
 ##     if(is.na(row$Rate) | is.na(row$Application.rate)){ return(NA) }
 ##     a <- sum(as.numeric(unlist(strsplit(row$Rate, "\\+")))) == sum(as.numeric(unlist(strsplit(row$Application.rate, "\\+"))))
 ##     if(is.na(a)){ return(NA) }
@@ -195,129 +300,88 @@ ins_table_treated <- data.frame(ins_table_treated, tmp, stringsAsFactors = FALSE
 
 ins_table_utc[,colnames(tmp)] <- NA
 
-## now change te typos since we're done with matching
-ins_table_treated$Pesticide.commercial.name <-
-    gsub("Beseige", "Besiege", ins_table_treated$Pesticide.commercial.name)
+## now that we have all the AI info in dat, it is easy to transfer it to
+## ins_table:
 
-## check:
-## tab_new <-
-##     ins_table_treated %>%
-##     group_by(PDF.file.name, Source..Fig.or.Table.number., Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..) %>%
-##     dplyr::summarise(
-##         mpn = paste(unique(Multiple.product.numbers), collapse = ";"),
-##         key = paste(unique(MPNkey), collapse = ";"))
-## tab_old <-
-##     dat %>%
-##     group_by(PDF.file.name, Source..Fig.or.Table.number., Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..) %>%
-##     dplyr::summarise(
-##         mpn = paste(unique(Multiple.product.numbers), collapse = ";"),
-##         key = paste(unique(key), collapse = ";"))
-## tab <- dplyr::left_join(tab_new, tab_old,
-##                         by = c("PDF.file.name","Source..Fig.or.Table.number.", "Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..")) %>%
-##     group_by(PDF.file.name, Source..Fig.or.Table.number.) %>%
-##     dplyr::mutate(
-##         eq1 = setequal(unlist(strsplit(mpn.x, split = ";")),
-##             unlist(strsplit(mpn.y, split = ";"))),
-##         eq2 = setequal(unlist(strsplit(key.x, split = ";")),
-##             unlist(strsplit(key.y, split = ";")))
-##         )
-## filter(tab, !eq2 | !eq1)
+ai_dat <- dat %>%
+    dplyr::select(DPR.Label.Database.name, Pesticide.commercial.name,
+           AI.1, X..AI1,
+           AI.2, X..AI2,
+           AI.3, X..AI3,
+           AI.4, X..AI4) %>%
+    dplyr::distinct(Pesticide.commercial.name,
+           AI.1, X..AI1,
+           AI.2, X..AI2,
+           AI.3, X..AI3,
+           AI.4, X..AI4)
 
+ins_table_treated <- left_join(ins_table_treated, ai_dat, by = "Pesticide.commercial.name")
 
-## let's remove the erroneous individuals for now
-## TODO, get a better fix for this
-i <- grep(";", ins_table_treated$MPNkey)
-ins_table_treated <- ins_table_treated[-i, ]
+## make a better MPNkey
+ins_table_treated <- ins_table_treated %>%
+    dplyr::mutate(MPNkey = ifelse(is.na(MultProdNum), NA,
+                      paste(V1, MultProdNum, sep = "-")))
 
-## TODO: The next sections need to change to incorporate the new data
-
-## I found some lovely little elisions. Instead of dicking around the
-## excel file I'm just going to fill them  in here:
-elisions <- list(
-    Pcide = c("XDE-175", "Transform 50WG", "Boron 1.1EC", "Paradigm VC 1E", 
-              "Prolex", "Vydate", "Bidrin", "Pravathon", "HGW86", "Brigade", 
-              "Intruder 70WDG", "Leverage 3.6DC", "Transform", "Closer SC", 
-              "No insecticide (oil only)", "Cyclaniliprole 50SL", "9114", "9047", 
-              "MusolX-16", "DPX-KN128 1.25EC", "F-0517", "DiPel", "S1812 35WP"),
-    Ai = list("spinetoram", "sulfoxaflor", "boron", c("halauxifen", "florasulam"),
-              "gamma-cyhalothrin","oxamyl","dicrotophos","chlorantraniliprole",
-              "dpx-hgw86 technical", "bifenthrin","acetamiprid",
-              c("imidacloprid", "beta-cyfluthrin"), NA, "sulfoxaflor", NA,
-              "cyclaniliprole", "s-cyano", c("zeta-cyermethrin", "chlorpyrifos"),
-              NA, "indoxacarb", NA, "bacillus thuringiensis", "pyridalyl"
-              ),
-    AiPerc = list(100.0, 50.0, NA, c(20.0, 20.0), 14.4, 24.0, 82.0, 5.0, 10.7,
-                  25.1, 70.0, c(21.0, 10.5), NA, 21.8, NA, NA, 9.6,
-                  c(3.08, 30.8), NA, 15.84, NA, 54.0, 35.0)
-)
-
-##_______________________add AI & AI%_________________________________##
-## j is for debugging. (it's also for inflating the importance of the first
-## letter of my given name)
-j <- ""
-AI_table <- ldply(unique(ins_table_treated$Pesticide.commercial.name),
-                  function(x){
-                      j <- get("j", envir = globalenv())
-                      assign("j", x, envir = globalenv())
-                      if(x %in% elisions$Pcide){
-                          i <- which(elisions$Pcide == x)
-                          ais <- elisions$Ai[[i]]
-                          aiperc <- elisions$AiPerc[[i]]
-                      } else {
-                          tmp <- dat %>% dplyr::filter(Pesticide.commercial.name == x)
-                          ais <- hf$trim(tolower(tmp$Active.Ingredient..AI.))
-                          aiperc <- tmp$AI..
-                      }
-                      if (all(is.na(ais))) {
-                          ais <- unique(ais)
-                          aiperc <- unique(aiperc)
-                      } else {
-                          ais <- unlist(strsplit(unique(na.omit(ais)), "\\+"))
-                          if(!is.numeric(aiperc)){
-                              if(!all(is.na(aiperc))){
-                                  aiperc <- as.numeric(unlist(strsplit(unique(na.omit(aiperc)), "\\+")))
-                              } else {
-                                  aiperc <- na.omit(aiperc)
-                              }
-                          }
-                          if(length(aiperc) == 0){
-                              aiperc <- rep(NA, length(ais))
-                          }
-                          if(length(ais) != length(aiperc)){
-                              stopifnot(length(ais) > length(aiperc))
-                              aiperc <- c(aiperc, rep(NA, length(ais) - length(aiperc)))
-                          }
-                      }
-                      data.frame(
-                          Pesticide.commercial.name = x,
-                          AIperc = aiperc,
-                          AI = ais,
-                          stringsAsFactors = FALSE)
-                  })
-
-ins_table_treated <- merge(ins_table_treated, AI_table,
-                           by = c("Pesticide.commercial.name"))
-
-## give the untreated rows the same cols
-ins_table_utc["AI"] <- NA
-ins_table_utc["AIperc"] <- NA
 
 ##____________standardize AIs________________________##
 
-ins_table_treated["AI"] <- gsub("chlorpyifos",
-                                "chlorpyrifos",
-                                ins_table_treated$AI)
+ins_table_treated[,c("AI.1", "AI.2", "AI.3", "AI.4")] <-
+    llply(c("AI.1", "AI.2", "AI.3", "AI.4"), function(x){
+        tolower(gsub("chlorantraniliprole\\+lambda\\-cyhalothrin",
+                     "lambda-cyhalothrin + chlorantraniliprole",
+                     gsub("chlorpyifos",
+                          "chlorpyrifos",
+                          ins_table_treated[, x])))
+    })
 
 ins_table_treated <- ins_table_treated %>%
-    mutate(AI = hf$trim(AI))
+    dplyr::mutate(AI.1 = ifelse(AI.1 == "na", NA, AI.1),
+           AI.2 = ifelse(AI.2 == "na", NA, AI.2),
+           AI.3 = ifelse(AI.3 == "na", NA, AI.3),
+           AI.4 = ifelse(AI.4 == "na", NA, AI.4))
 
+##lets get rid of these ahead of time!
+ins_table_utc$DPR.Label.Database.name <- "UTC"
+ins_table_utc$AI <- NA
+ins_table_utc$AIperc <- NA
+
+## let's melt the data so that each ai has it's own row:
+ins_table_treated <- ldply(1:nrow(ins_table_treated), function(i){
+    ## specify the columns we want to melt
+    ai_cols <- c( "AI.1", "AI.2", "AI.3", "AI.4")
+    ai_perc_cols <- c("X..AI1", "X..AI2", "X..AI3", "X..AI4")
+    ## get the sample in question
+    row <- ins_table_treated[i,]
+
+    ## if for some reason there are no AI's, return
+    ## the row with empty AI and AIperc variables
+    if(is.na(row$AI.1)){
+        row <- row[, setdiff(colnames(row), c(ai_cols, ai_perc_cols))]
+        row$AI <- NA
+        row$AIperc <- NA
+        return(row)
+    }
+    ## melt
+    ais <- melt(row[, c("SampleID",ai_cols)], id = "SampleID") %>%
+        dplyr::rename(AI = value) %>%
+            dplyr::select(-variable)
+    ai_percs <- melt(row[, c("SampleID",ai_perc_cols)], id = "SampleID") %>%
+        dplyr::rename(AIperc = value) %>%
+            dplyr::select(-variable)
+    ## form df from the melted data
+    new_cols <- data.frame(AI = ais$AI, AIperc = ai_percs$AIperc, stringsAsFactors = FALSE) %>%
+        filter(!is.na(AI))
+    ## remove the melted columns from row
+    row <- row[, setdiff(colnames(row), c(ai_cols, ai_perc_cols))]
+    ## column bind and return
+    cbind(row, new_cols)
+})
 
 ## bind the two pieces back together
 ins_table <- rbind(ins_table_utc, ins_table_treated)
+ins_table <- as.data.frame(ins_table) %>% arrange(Original.sequence)
 
 ##___________________Calc Uniform AI units__________________##
-attr(ins_table, "vars") <- NULL
-
 tmp <- ins_table %>% select(Uniform.application.rate,
                             Uniform.application.rate.units,
                             Density, Application.Counts,
@@ -327,90 +391,6 @@ tmp <- mdply(tmp, mf$convertRate, .expand = TRUE, .inform = TRUE)
 
 ins_table$AILbsAcre <- tmp$AILbsAcre
 
-##_________________Lab or field?___________________##
-dat_tmp <- dat %>% transmute(
-    PDF.file.name = PDF.file.name,
-    Source..Fig.or.Table.number. = Source..Fig.or.Table.number.,
-    Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf.. = Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..,
-    X.Field..or..lab..study = hf$trim(tolower(X.Field..or..lab..study)),
-    Crop = tolower(Crop),
-    Variety = Variety
-    )
-
-ins_table <- left_join(ins_table, unique(dat_tmp),
-                       by = c("PDF.file.name",
-                           "Source..Fig.or.Table.number.",
-                           "Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf.."))
-
-##_________________Remove Repeat Data________________________##
-
-ins_table_utc <- ins_table %>% filter(Pesticide == "UTC")
-
-tmp <- ldply(1:nrow(ins_table_utc), function(i){
-    ## pretend its a loop and go through by rows
-    row <- ins_table[i,]
-    ## We're looking for repeats, so search ins_table for
-    ## any matches with itself in pesticide and insectdays,
-    ## but non-matches with the V1 table hash
-    slice <- ins_table %>% filter(Pesticide == row$Pesticide,
-                                  insectDays == row$insectDays,
-                                  V1 != row$V1)
-    ## if the slice is empty, we're alright
-    if(empty(slice)){
-        return(NULL)
-    }
-    ## otherwise, get the info:
-    data.frame(ID = row$V1,
-               Pesticide = row$Pesticide,
-               insectDays = row$insectDays,
-               pdf = row$PDF.file.name,
-               tbl = row$Source..Fig.or.Table.number.,
-               repPDFs = paste(unique(slice$PDF.file.name), collapse = ";"),
-               reptbls = paste(unique(slice$Source..Fig.or.Table.number.),
-                   collapse = ";"),
-               repIDs = paste(unique(slice$V1), collapse = ";"),
-               repInsectDays = paste(unique(slice$insectDays), collapse = ";"),
-               repPesticides = paste(unique(slice$Pesticide), collapse = ";"),
-               stringsAsFactors = FALSE)
-}, .progress = "text")
-
-## TODO: this is a quick fix, it won't be right if more
-## repeated tables are added. So either: precheck tables, or
-## make the filtering-out of repeated tables automatic.
-
-## better method:
-repV1 <- c()
-for (i in 1:nrow(tmp)) {
-    V1 <- tmp$ID[i]
-    reps <- unlist(strsplit(tmp$repIDs[i], ";"))
-    b <- any(reps %in% repV1)
-    if(!b){
-        repV1 <- c(repV1, V1)
-    }
-}
-
-redundantV1s <- setdiff(unlist(strsplit(tmp$repIDs, ";")),repV1)
-
-## tmp <- tmp[order(tmp$pdf,tmp$tbl),]
-## primary <- tmp[1:11,]
-
-## primary <- ldply(1:nrow(primary), function(i){
-##     row <- primary[i,]
-##     redun <- unlist(strsplit(row$repIDs, ";"))
-##     data.frame(pdf = row$pdf,
-##                tbl = row$tbl,
-##                ID = row$ID,
-##                redundantV1s = redun, stringsAsFactors = FALSE)
-## })
-
-ins_table <- ins_table %>% filter(!(V1 %in% redundantV1s))
-
-## ## also check that no tables appear twice because of
-## ## errors in code/files
-## overEntered <- tmp %>%
-##     mutate(bool = pdf == repPDFs) %>%
-##     filter(bool) %>%
-##     select(pdf, tbl, repPDFs, reptbls, ID, repIDs)
 
 ##_____________________form the ln ratio___________________________##
 ins_table['LnR'] <- log(ins_table$PercControl)
@@ -512,55 +492,27 @@ ins_table['SEMestMax'] <- weights2
 ins_table['SEMestMin'] <- weights3
 
 
+##_________Change_Pesticide_Commercial_Name_to_DPR_Name_____________##
+ins_table <- ins_table %>%
+    dplyr::mutate(DPR.Label.Database.name = ifelse(is.na(DPR.Label.Database.name),
+                      Pesticide.commercial.name, DPR.Label.Database.name))
+
 ##_______________________add indicated ais__________________________##
 i <- tolower(ins_table$Pesticide) %in% tolower(ins_table$AI)
 ais <- tolower(ins_table$Pesticide[i])
 ins_table$AI[i] <- ais
-ins_table$AIperc[i] <- 100.0
+gPerc <- unlist(llply(which(i), function(x){
+    ifelse(is.na(ins_table$AIperc[x]), "100", ins_table$AIperc[x])
+}))
+ins_table$AIperc[i] <- gPerc
 ## TODO: probably need to insert density as well.
 
 ##__________________fix mispellings, etc____________________________##
 
 i <- ins_table$AI == "(s)-cypermethrin"
 ins_table$AI[i] <- "zeta-cypermethrin"
-i <- ins_table$AI == "zeta-cyermethrin"
-ins_table$AI[i] <- "zeta-cypermethrin"
-i <- ins_table$Pesticide == "Lorsban 4F"
-ins_table$Pesticide[i] <- "Lorsban 4E"
-i <- ins_table$Pesticide == "Lorsban 4 E"
-ins_table$Pesticide[i] <- "Lorsban 4E"
-i <- ins_table$Pesticide == "Lorsban 4EC"
-ins_table$Pesticide[i] <- "Lorsban 4E"
-i <- ins_table$Pesticide == "Lorsban4E"
-ins_table$Pesticide[i] <- "Lorsban 4E"
-i <- ins_table$Pesticide == "GF2153"
-ins_table$Pesticide[i] <- "Lorsban Advanced"
-i <- ins_table$Pesticide == "Lorsban Advanced 3.755E"
-ins_table$Pesticide[i] <- "Lorsban Advanced"
-i <- ins_table$Pesticide == "GF-2153"
-ins_table$Pesticide[i] <- "Lorsban Advanced"
-i <- ins_table$Pesticide == "GF-2153"
-ins_table$Pesticide[i] <- "Lorsban Advanced"
-i <- ins_table$Pesticide == "GF-2153 3.75EC"
-ins_table$Pesticide[i] <- "Lorsban Advanced"
-i <- ins_table$Pesticide == "Lorsban Advanced 3.75EC"
-ins_table$Pesticide[i] <- "Lorsban Advanced"
-i <- ins_table$Pesticide == "Lorban Advanced"
-ins_table$Pesticide[i] <- "Lorsban Advanced"
-i <- ins_table$Pesticide == "Lorsban Advanced 4F"
-ins_table$Pesticide[i] <- "Lorsban Advanced"
-i <- ins_table$Pesticide == "Lorsban"
-ins_table$Pesticide[i] <- NA
-i <- ins_table$Pesticide == "Lock-on"
-ins_table$Pesticide[i] <- "Lock-on 2EC"
-i <- ins_table$Pesticide == "Lockon-2EC"
-ins_table$Pesticide[i] <- "Lock-on 2EC"
-i <- ins_table$Pesticide == "Lorsban 75 WG"
-ins_table$Pesticide[i] <- "Lorsban 75WG"
-i <- ins_table$Pesticide == "Lorsban Advance 4F"
-ins_table$Pesticide[i] <- "Lorsban Advanced"
-ins_table$Pesticide <- hf$trim(ins_table$Pesticide)
-
+i <- ins_table$AI == "chlorpyifos"
+ins_table$AI[i] <- "chlorpyrifos"
 ##__________________add standard use ranges_________________________##
 
 ranges <- data.frame(
@@ -576,45 +528,14 @@ ranges <- data.frame(
     stringsAsFactors = FALSE
     )
 
-##_____make sure all data is up to date with missing info___________##
-missingDens <- read.csv("~/Dropbox/ZhangLabData/MissingAIdensDat.csv",
-                        na.strings = c("X", "solid"), stringsAsFactors = FALSE)
-missingDens$Density <- as.character(missingDens$Density)
-missingPerc <- read.csv("~/Dropbox/ZhangLabData/missingAIpercDat.csv",
-                        na.strings = c("X", "solid"), stringsAsFactors = FALSE)
-missingPerc <- missingPerc %>%
-    mutate(Percent = as.character(gsub("%", "", Percent)),
-           Density = as.character(Density))
-
-checkDensAndPerc <- function(.data){
-    rowDensOnly <- missingDens %>% filter(
-        Pesticide == unique(.data$Pesticide) &
-        AI == unique(.data$AI)
-        )
-    rowDensAndPerc <- missingPerc %>% filter(
-        Pesticide == unique(.data$Pesticide) &
-        AI == unique(.data$AI)
-        )
-    if(nrow(rowDensOnly) == 0 & nrow(rowDensAndPerc) == 0){return(.data)} 
-    if(nrow(rowDensAndPerc) == 1) {
-        .data$Density <- rowDensAndPerc$Density
-        .data$AIperc <- rowDensAndPerc$Percent
-    } else {
-        .data$Density <- rowDensOnly$Density
-    }
-    .data
-}
-
-ins_table <- ins_table %>% group_by(Pesticide, AI) %>%
-    do(checkDensAndPerc(.)) %>% ungroup()
-
 ##___________________________save___________________________________##
-save(ins_table, ranges, response_tables, response_tables_lookup, dat,
-     file = "~/Dropbox/ZhangLabData/cpyrMAdata.rda")
+## if not run from main, uncomment:
+## save(ins_table, ranges, response_tables, response_tables_lookup, dat,
+##      file = "~/Dropbox/ZhangLabData/cpyrMAdataJan27.rda")
 
 ##___________________________clean up_______________________________##
-
-rm(list = ls())
+rm(list = setdiff(ls(), c("ins_table", "ranges", "response_tables",
+       "response_tables_lookup", "dat"))
 
 ######################################################################
 ######################################################################

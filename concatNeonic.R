@@ -1,7 +1,6 @@
 library(plyr)
 library(dplyr)
 library(reshape2)
-library(xlsx)
 library(data.table)
 
 source("~/Documents/Coding/R/R_convenience/helper_functions.R")
@@ -9,34 +8,38 @@ source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 ### Neonic Data
 
 ## get all of the file names in one place
-files1 <- list.files("~/Dropbox/ZhangLabData/ExcelData/NeonicDataFiles", full.names = TRUE)
-files1 <- files1[grepl("csv", files1)]
-files1 <- files1[!grepl("raw", files1, ignore.case = TRUE)]
-
-files2 <- list.files("~/Dropbox/ZhangLabData/ExcelData/4Jan2016", full.names = TRUE)
-files2 <- files2[grepl("csv", files2, ignore.case = TRUE)]
-files2 <- files2[!grepl("raw", files2, ignore.case = TRUE)]
-
-files <- c(files1, files2, "~/Dropbox/ZhangLabData/ExcelData/BeanData7Jan15/Data-DryBeanReports.csv")
-
+files <-  unlist(llply(c("~/Dropbox/ZhangLabData/ExcelData/NeonicDataFiles",
+                         "~/Dropbox/ZhangLabData/ExcelData/4Jan2016",
+                         "~/Dropbox/ZhangLabData/ExcelData/CpyrData",
+                         "~/Dropbox/ZhangLabData/ExcelData/BeanData7Jan15"),
+                       function(directory){
+                           files <- list.files(directory, full.names = TRUE)
+                           files <- files[grepl("csv", files)]
+                           files[!grepl("raw", files, ignore.case = TRUE)]
+                       }))
 
 ## use them to import the data
-dfs <- llply(files, function(f){ read.csv(f) }, .progress = "text")
+dfs <- llply(files, function(f){ read.csv(f, stringsAsFactors = FALSE,
+                                          na.strings = c("", "not specified", "???", "uncertain",
+                                              "unknown", "unknown formulation", "unclear",
+                                              "not specified", "not stated",
+                                              "seed treatment date not specified")) }, .progress = "text")
 
 ## remove NA columns
 dfs <- llply(dfs, function(df){
     df[, !grepl("NA\\.", colnames(df))]
 })
 
-## remove repeat columns, RowNum, and 'X' columns
+## remove repeat columns, RowNum, and 'X' columns (update, I think
+## I'll keep X cols - I don't know what their deal is)
 dfs <- llply(dfs, function(df){
     df <- df[, !grepl("[1-9](?!.)", colnames(df), perl = TRUE)]
     df[, !grepl("RowNum", colnames(df))]
-    df[, !grepl("X", colnames(df))]
+    ## df[, !grepl("X", colnames(df))]
 })
 
 ## alter REALLY problematic columns by hand:
-colnames(dfs[[1]])[14] <- "Application.volumn.units"
+colnames(dfs[[1]])[14] <- "Application.volume.units"
 colnames(dfs[[5]])[18] <- "Application.rate.units"
 
 
@@ -54,10 +57,12 @@ corrections <- list(
     Study.design = c("study", "des"),
     Replicate.size = c("size"),
     Application.rate = list(c("pesticide", "usage"), c("(?<!.)Appl\\.rate(?!.)")),
-    Multiple.product.numbers = c("Multi\\.prod\\.no"),
-    Application.rate.units = list(c("appl", "rate", "units"), c("pesticide", "unit")),
-    Application.volume = list(c("total\\.applied\\.amount"),
-        c("appl\\.vol(?!.)"), c("appl\\.volume(?!.)"),
+    Multiple.product.numbers = list(c("Multi\\.prod\\.no"), c("mult", "prod", "number")),
+    Application.rate.units = list(c("(?<!.)appl", "rate", "units"), c("pesticide", "unit")),
+    Uniform.application.rate = c("uniform", "application", "rate(?!\\.)"),
+    Uniform.application.rate.units = c("uniform", "application", "rate", "units"),
+    Density = c("density"),
+    Application.volume = list(c("total\\.applied\\.amount"), c("appl\\.vol(?!.)"), c("appl\\.volume(?!.)"),
         c("Application\\.volume\\.\\.just\\.a\\.number\\.")),
     Application.volume.units = c("appl", "vol", "units"),
     Treatment.medium = list(c("treat", "medium"), c("treat", "media")),
@@ -72,18 +77,22 @@ corrections <- list(
     Field.or.lab = c("field", "lab"),
     Adjuvant.Surfactant.rate = list(c("adj", "surf", "rate"), c("a\\.", "s\\.", "rate")),
     StatTest = c("stat", "test"),
-    Adjuvant.Surfactant = list(c("adj", "surfactant(?!\\.)"), c("aju")),
-    VarType = list(c("vartype"), c("Variance\\.type\\.\\.StDev\\.\\.SEM\\.\\.etc\\.\\.")),
-    Measurement.notes = c("Measured\\.endpoint\\.notes"),
-    UTC.Var = list(c("u\\.var"), c("UTC\\.variance\\.\\.st\\.dev\\.\\.SEM\\.\\.when\\.given\\.")),
-    Treatment.Var = list(c("(?<!.)var(?!.)"), c("t\\.var"), c("Pesticide\\.treatment\\.variance")),
-    Treatment.Value = list(c("treat(?!.)"), c("meas", "results"), c("Pesticide\\.treatment\\.value")),
-    T.StGr = list(c("(?<!\\.)stgr(?!.)"), c("Pesticide\\.treatment\\.StGr\\.letter")),
+    Adjuvant.Surfactant = list(c("adj", "surfactant(?!\\.)"), c("aju"), c("surf", "adjuvant\\.\\.if")),
+    VarType = list(c("vartype"), c("Variance\\.type\\.\\.StDev\\.\\.SEM\\.\\.etc\\.\\."), c("vartiance", "ype")),
+    Measurement.notes = list(c("Measured\\.endpoint\\.notes"), c("notes", "methodology", "meas")),
+    Treatment.Var = list(c("(?<!.)var(?!.)"), c("t\\.var"), c("Pesticide\\.treatment\\.variance"), c("t\\.variance")),
+    Treatment.Value = list(c("treat(?!.)"), c("meas", "results"), c("Pesticide\\.treatment\\.value"), c("treatment(?!\\.)")),
+    Treatment.StGr = list(c("(?<!\\.)stgr(?!.)"), c("Pesticide\\.treatment\\.StGr\\.letter"),
+        c("t\\.", "stat", "group"), c("t\\.stgr")),
     Plot.size = c("plot", "size"),
-    Year = list(c("study", "year"), c("year")),
+    Year = list(c("study", "year"), c("year(?!\\.)")),
     Pesticide.commercial.name = c("Product(?!.)"),
-    UTC = c("Untreated\\.Control\\.Value"),
-    U.StGr = c("UTC\\.StGr\\.letter")
+    UTC.Var = list(c("u\\.var"), c("UTC\\.variance\\.\\.st\\.dev\\.\\.SEM\\.\\.when\\.given\\."), c("u\\.variance")),
+    UTC.Value = list(c("Untreated\\.Control\\.Value"), c("untreated", "control(?!\\.)"), c("utc(?!\\.)")),
+    UTC.StGr = list(c("UTC\\.StGr\\.letter"), c("u", "stat", "group", "let"), c("u\\.stgr")),
+    AI = c("active", "ingredient"),
+    PercentAI = c("(?<!.)ai\\.\\."),
+    TotalMassAI = c("total", "mass", "ai")
     )
 
 
@@ -111,4 +120,4 @@ tmp <- llply(dfs, function(df){
 ## and in the darkness:
 df_full <- rbindlist(tmp, fill = TRUE, use.names = TRUE)
 
-write.csv(df_full, file = "~/Dropbox/ZhangLabData/ExcelData/Neonic4JanCombined.csv")
+write.csv(df_full, file = "~/Dropbox/ZhangLabData/ExcelData/AllDataCombined20Jan.csv")

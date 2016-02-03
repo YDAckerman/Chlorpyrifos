@@ -83,7 +83,24 @@ mf$var_dij_imp <- function(di, ni, ki){
 }
 
 
+mf$VarSMD <- function(.data){
+    imputed <- unique(.data$Imputed)
+    ctrl <- .data %>% filter(Product == "UTC")
+    ntreat <- nrow(.data) - 1
+    varsmd <- unlist(llply(1:nrow(.data), function(i){
+        if(.data$Product[i] == "UTC"){return(NA)}
+        if(imputed){
+            mf$var_dij_imp(.data$smd[i], .data$Replicates[i], ntreat)
+        } else {
+            mf$var_dij(.data$smd[i], ctrl$Replicates, .data$Replicates[i])
+        }
+    }))
+    .data$varsmd <- varsmd
+    .data
+}
+
 mf$vcov <- function(.data){
+    
     imputed <- unique(.data$Imputed)
     ctrl <- .data %>% filter(Product == "UTC")
     dat <- .data %>% filter(Product != "UTC")
@@ -94,7 +111,7 @@ mf$vcov <- function(.data){
         if(i > j){ 0 }
         else if(imputed){
             if(i == j){
-                mf$var_dij_imp(dat[i, "smd"], dat[i, "Replicates"],
+                mf$var_dij_imp(dat$smd[i], dat$Replicates[i],
                                nrows)
             } 
             else {
@@ -150,7 +167,7 @@ mf$cPesticideMatchCol <- function(df){
     ## each group.
     df %>%
         group_by(PDF.file.name,
-                 Source..Fig.or.Table.number.,
+                 Source.Fig.or.Table.number,
                  Pesticide) %>%
                      do(mf$addPesticideMatch(.))
 }
@@ -162,13 +179,13 @@ mf$addPesticideMatch <- function(.data){
     ## pull out relevant values
     pesticide <- unique(.data$Pesticide)
     pdf <- unique(.data$PDF.file.name)
-    table <- unique(.data$Source..Fig.or.Table.number.)
+    table <- unique(.data$Source.Fig.or.Table.number)
     slice <-
         dat %>%
             dplyr::mutate(PDF.file.name = hf$trim(PDF.file.name),
-                          Source..Fig.or.Table.number. = hf$trim(Source..Fig.or.Table.number.)) %>%
+                          Source.Fig.or.Table.number = hf$trim(Source.Fig.or.Table.number)) %>%
                 filter(PDF.file.name == pdf &
-                       Source..Fig.or.Table.number. == table)
+                       Source.Fig.or.Table.number == table)
     ## pull products and rates from the subset
     products <- slice$Pesticide.commercial.name
     ## find most likely product
@@ -228,8 +245,8 @@ mf$cMultiProdMatchCol <-  function(df){
     ## mprod# in table, then perform addMprodMatch on each group
     df %>%
             group_by(PDF.file.name,
-                     Source..Fig.or.Table.number.,
-                     Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..,
+                     Source.Fig.or.Table.number,
+                     Pest.units,
                      MultProdNum) %>%
                          do(mf$addMprodMatch(.))
 }
@@ -242,8 +259,8 @@ mf$addMprodMatch <- function(.data){
     ## gather up all the necessary identifiers:
     pesticides <- unique(.data$Pesticide.commercial.name)
     pdf <- unique(.data$PDF.file.name)
-    table <- unique(.data$Source..Fig.or.Table.number.)
-    unit <- unique(.data$Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..)
+    table <- unique(.data$Source.Fig.or.Table.number)
+    unit <- unique(.data$Pest.units)
     rates <- as.numeric(.data$Rate)
     adjsur <- .data$AS
     adjsurR <- as.numeric(gsub("[^0-9\\.]", "", .data$ASrate))
@@ -257,8 +274,8 @@ mf$addMprodMatch <- function(.data){
         ## filter the cpyr data set using the identifiers
         tmp <-
             dat %>% filter(PDF.file.name == pdf &
-                           Source..Fig.or.Table.number. == table &
-                           Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf.. == unit)
+                           Source.Fig.or.Table.number == table &
+                           Pest.units == unit)
 
         ## group tmp by multiple.product.numbers (the cypr equiv of mprod#)
         ## and compare each group to the pesticide usage identifiers.
@@ -345,7 +362,7 @@ mf$cRate <- function(df){
         row <- df[i, ]
 
         rate <- row$Rate
-        sour <- row$Source..Fig.or.Table.number.
+        sour <- row$Source.Fig.or.Table.number
         pdf <- row$PDF.file.name
         cide <- row$Pesticide.commercial.name
 
@@ -360,9 +377,9 @@ mf$cRate <- function(df){
         }
         
         tmp <- dat %>%
-            dplyr::mutate(Source..Fig.or.Table.number. = hf$trim(Source..Fig.or.Table.number.)) %>%
+            dplyr::mutate(Source.Fig.or.Table.number = hf$trim(Source.Fig.or.Table.number)) %>%
                 filter(PDF.file.name == pdf,
-                       Source..Fig.or.Table.number. == sour,
+                       Source.Fig.or.Table.number == sour,
                        Pesticide.commercial.name == cide) %>%
                            ## create a new column, Rate, that will
                            ## be easier to match on.
@@ -396,7 +413,10 @@ mf$convertToUniformRate <- function(Application.rate, Application.rate.units){
     ## Application.rate <- dat_new[1,]$Application.rate
     ## Application.rate.units <- dat_new[1,]$Application.rate.units
 
-    if(is.na(Application.rate.units) | is.na(Application.rate)){
+    if(is.na(Application.rate.units) |
+       is.na(Application.rate) |
+       hf$mgrepl(c("%", "\\^", "\\(", "\\)"), Application.rate) |
+       hf$mgrepl(c("tree", "conidia", "kg seed", "v/v"), Application.rate.units)){
         return(data.frame(Uniform.application.rate = NA,
                           Uniform.application.rate.units = NA,
                           stringsAsFactors = FALSE))
@@ -413,8 +433,8 @@ mf$convertToUniformRate <- function(Application.rate, Application.rate.units){
     is_fluid <- c(TRUE, FALSE, TRUE, FALSE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE)
     num_units <- c("pt","lb","qt","g","gal","L","ml", "dry oz", "fl oz", "^oz")
 
-    den <- sapply(den_units, function(x) grepl(x, Application.rate.units))
-    num <- sapply(num_units, function(x) grepl(x, Application.rate.units))
+    den <- sapply(den_units, function(x) grepl(x, hf$removeParens(Application.rate.units)))
+    num <- sapply(num_units, function(x) grepl(x, hf$removeParens(Application.rate.units)))
 
     if(setequal(num[4:5], c(TRUE, TRUE))){
         num[4:5] <- c(FALSE, TRUE)
@@ -442,7 +462,96 @@ mf$convertToUniformRate <- function(Application.rate, Application.rate.units){
     
 }
 
+mf$correctDfCols <- function(df){
 
+    corrections <- list(
+        Entered.by = list(c("enter", "by"), c("data", "entry")),
+        Proofed.by = c("proof"),
+        Locality = c("loca"),
+        Crop = c("crop"),
+        Variety = c("variety"),
+        Number.of.replicates = list(c("num", "replica"), c("replicate(?!\\.)"),
+            c("replications")),
+        Study.design = list(c("study", "des"), c("rcbd")),
+        Replicate.size = c("size"),
+        Application.rate = list(c("pesticide", "usage"),
+            c("(?<!.)Appl\\.rate(?!.)")),
+        Multiple.product.numbers = list(c("Multi\\.prod\\.no"),
+            c("mult", "prod", "number")),
+        Application.rate.units = list(c("(?<!.)appl", "rate", "unit"),
+            c("pesticide", "unit")),
+        Uniform.application.rate = c("uniform", "application", "rate(?!\\.)"),
+        Uniform.application.rate.units = c("uniform", "application",
+            "rate", "units"),
+        Density = c("density"),
+        Application.volume = list(c("total\\.applied\\.amount"),
+            c("appl\\.vol(?!.)"), c("appl\\.volume(?!.)"),
+            c("Application\\.volume\\.\\.just\\.a\\.number\\.")),
+        Application.volume.units = c("appl", "vol", "unit"),
+        Treatment.medium = list(c("treat", "medium"), c("treat", "media")),
+        Treatment.dates = list(c("treat", "dates", "incl"),
+            c("Treatment\\.dates"), c("Treatment\\.date"), c("appl", "date")),
+        Dates.checked = list(c("dates_checked"), c("date", "meas")),
+        Pest.common.name = list(c("pest\\.", "name"), c("Pest\\.pathogn\\.name"),
+            c("(?<!.)pest(?!.)")),
+        Pest.units = list(c("pest\\.", "unit"), c("measured\\.endpoint\\.units")),
+        Life.stage.tested = c("life", "stage"),
+        Application.notes = c("app", "note"),
+        Source.Fig.or.Table.number = list(c("source", "fig", "table"),
+            c("data", "source"), c("fig", "table")),
+        PDF.file.name = list(c("pdf", "file", "name"), c("pdf")),
+        Field.or.lab = c("field", "lab"),
+        Adjuvant.Surfactant.rate = list(c("adj", "surf", "rate"),
+            c("a\\.", "s\\.", "rate"), c("adj", "appl", "rate")),
+        StatTest = c("stat", "test"),
+        Adjuvant.Surfactant = list(c("adj", "surfactant(?!\\.)"),
+            c("aju"), c("surf", "adjuvant\\.\\.if"), c("adjuvant(?!.)")),
+        VarType = list(c("vartype"),
+            c("Variance\\.type\\.\\.StDev\\.\\.SEM\\.\\.etc\\.\\."),
+            c("vartiance", "ype"), c("variance", "type")),
+        Measurement.notes = list(c("Measured\\.endpoint\\.notes"),
+            c("notes", "methodology", "meas")),
+        Treatment.Var = list(c("(?<!.)var(?!.)"), c("t\\.var"),
+            c("Pesticide\\.treatment\\.variance"), c("t\\.variance"), c("treat", "var")),
+        Treatment.Value = list(c("treat(?!.)"), c("meas", "results"),
+            c("Pesticide\\.treatment\\.value"), c("treatment(?!\\.)")),
+        Endpoint.Dates = c("endpt", "date"),
+        Treatment.StGr = list(c("(?<!\\.)stgr(?!.)"),
+            c("Pesticide\\.treatment\\.StGr\\.letter"),
+            c("t\\.", "stat", "group"), c("t\\.stgr"), c("treat", "stgr")),
+        Plot.size = c("plot", "size"),
+        Year = list(c("study", "year"), c("year(?!\\.)")),
+        Pesticide.commercial.name = c("Product(?!.)"),
+        UTC.Var = list(c("u\\.var"),
+            c("UTC\\.variance\\.\\.st\\.dev\\.\\.SEM\\.\\.when\\.given\\."),
+            c("u\\.variance")),
+        UTC.Value = list(c("Untreated\\.Control\\.Value"),
+            c("untreated", "control(?!\\.)"), c("utc(?!\\.)")),
+        UTC.StGr = list(c("UTC\\.StGr\\.letter"),
+            c("u", "stat", "group", "let"), c("u\\.stgr")),
+        AI = c("active", "ingredient"),
+        PercentAI = c("(?<!.)ai\\.\\."),
+        TotalMassAI = c("total", "mass", "ai")
+        )
+
+    for (correction_name in names(corrections)) {
+        correction <- corrections[[correction_name]]
+        ## some corrections are lists, others are
+        ## individual vectors.
+        if(is.list(correction)){
+            colnum <- na.omit(unlist(llply(correction, function(x){
+                hf$mgrep(x, colnames(df), ignore.case = TRUE,
+                         strict = length(x) - 1, perl = TRUE)
+            })))
+            colnames(df)[colnum] <- correction_name
+        } else {
+            colnum <- hf$mgrep(correction, colnames(df), ignore.case = TRUE,
+                               strict = length(correction) - 1, perl = TRUE)
+            colnames(df)[colnum] <- correction_name
+        }
+    }
+    df
+}
 
 ############################################################
 ############################################################

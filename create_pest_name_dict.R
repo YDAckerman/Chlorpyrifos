@@ -10,27 +10,36 @@
 
 ## Libraries:
 library(stringdist)
-
-## wd
-setwd("/Users/Yoni/Documents/ZhangLab")
+library(plyr)
+library(dplyr)
 
 ## source functions
-source("/Users/Yoni/Documents/ZhangLab/R/insect_dict_helper_funs.R")
+source("~/Documents/ZhangLab/R/Chlorpyrifos/insect_dict_helper_funs.R")
 
 ##_______________________workflow_________________________##
 
 ## pull dataframe into R
-dat <- read.csv("ExcelData/Data-allCpyr-withAI.csv",
+dat <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-allCpyr-withAI.csv",
                 stringsAsFactors = FALSE)
 
-dat1 <- read.csv("ExcelData/Data-Cpyr-May2015-Mike.csv",
+dat1 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-Mike.csv",
                  stringsAsFactors = FALSE)
 
-dat2 <- read.csv("ExcelData/Data-Cpyr-Oct2014-Jess.csv",
+dat2 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Jess.csv",
                 stringsAsFactors = FALSE)
 
+dat3 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-TwoMoreCPYR.csv",
+                 stringsAsFactors = FALSE, na.strings = c("", "???")) %>%
+    dplyr::rename(
+        Source..Fig.or.Table.number. = Data.source,
+        Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf.. = Measured.endpoint.or.pest.units,
+        Life.stage.tested..if.stated..egg..larva..pupa..adult. = Life.stage..if.applicable.,
+        Pest..as..common.name..scientific.name...if.both.given..if.not.just.enter.which.is.stated.in.article. = Pest.pathogn.name,
+        Year = Study.year
+        )
+
 ## pull individual pests into vec: (what a col name...)
-pests <- unique(unlist(llply(list(dat,dat1,dat2), function(d){
+pests <- unique(unlist(llply(list(dat,dat1,dat2, dat3), function(d){
     d$Pest..as..common.name..scientific.name...if.both.given..if.not.just.enter.which.is.stated.in.article.
 })))
 
@@ -99,14 +108,15 @@ pestDict[["MSB"]] <- "Meadow spittlebug (species not specified)"
 pestDict[["TP"]] <- "Parasitoid: Trioxys pallidus"
 pestDict[["SA"]] <- "Hyperparasitoid: Syrphophagus aphidivorus"
 pestDict[["CPB"]] <- "Clouded plant bug: Neurocolpus nubilus"
+pestDict[["TPB"]] <- c(pestDict[["TPB"]], "Tarnished plant bug (TPB): Lygus lineolaris (Palisot de Beauvois)")
 
 ## see that everyone has been seen to:
 ## tmp <- sapply(pests, function(x){any(sapply(ls(pestDict), function(y){ x %in% pestDict[[y]]}))})
 ## tmp[!tmp]
 
-rm(s, pests, idhf, pest, i, key, keys, value, dat, dat1, dat2)
+rm(s, pests, idhf, pest, i, key, keys, value, dat, dat1, dat2, dat3)
 
-save(pestDict, file = "pestDictionary.rda")
+save(pestDict, file = "~/Dropbox/ZhangLabData/pestDictionary.rda")
 ########################################
 ########################################
 

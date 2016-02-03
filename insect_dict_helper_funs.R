@@ -2,8 +2,8 @@
 ## helper functions for insect dict prep
 ########################################
 
-setwd("/Users/Yoni/Documents/ZhangLab")
-source("R/helper_functions.R")
+
+source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 
 idhf <- new.env()
 

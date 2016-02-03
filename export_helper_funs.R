@@ -1,9 +1,15 @@
 ############################################################
-## Helper functions for importing data from our excel files:
+## Helper functions for importing data from our excel files.
+## author: Yoni Ackerman
+## contact: jdackerma@ucdavis.edu
 ############################################################
 
+## create an environment to store all of
+## the functions we create. This will help to keep
+## work spaces organized.
 ehf <- new.env()
 
+## source the helper function (hf) environment
 source("~/Documents/Coding/R/R_convenience/helper_functions.R")
 
 ## given the correct file, find the indices of the raw block of data
@@ -262,7 +268,7 @@ ehf$getGrpRanges <- function(unit_line, match_strings, col_count, offset){
     col_grps <- c()
     col_range <- 1 + offset : (1 + col_count)
 
-    ## for loop for clarity's sake
+    ## for loop for clarity's sake:
     for (word in str_comparisons$words) {
         if (is.na(word)){
             col_grps <- c(col_grps, current_grp)
@@ -284,7 +290,7 @@ ehf$getGrpRanges <- function(unit_line, match_strings, col_count, offset){
 }
 
 ehf$getColCount <- function(file, t_index){
-        ## count number of necessary columns:
+    ## count number of necessary columns:
     header <- unlist(strsplit(file[[1]][t_index$start], ";"))
     sum(sapply(header, function(x) x != "" ))
 }
@@ -382,22 +388,29 @@ ehf$getResponseTables <- function(row){
     ## use hierarchical information to find the dataset:
     block_range <- ehf$getBlockRange(file, pdf)
 
+    ## do the same to find the table's range:
     tbl_range <- ehf$getTableRange(file, tbl_ind, block_range)
 
+    ## a table range of 1 value would indicate a problem:
     if (length(tbl_range) == 1){
         mess <- paste(pdf, ":", tbl_ind, "not found \n", sep = " ")
         ##write(mess, file = "error.txt", append = TRUE)
         stop(mess)
     }
 
+    ## get the tables indices
     t_indices <- ehf$getTableContentRanges(file, tbl_range) ## df(start, end)
+    ## get the index of the pest unit
     unit_index <- ehf$getUnitIndex(file, tbl_range, unit_id, loc, insect_id)
 
+    ## account for some erroneous cases
     if (unit_index %in% t_indices$start || unit_index %in% t_indices$end){
         mess <- paste("Cannot find unit index in \n", pdf, tbl_ind, sep = " ")
         ##write(mess, file = "error.txt", append = TRUE)
         stop(mess)
     }
+
+    ## get the top of the data 
     top_of_data <- min(t_indices$start[t_indices$start > unit_index])
 
     if(is.infinite(top_of_data)){
@@ -407,10 +420,13 @@ ehf$getResponseTables <- function(row){
     t_index <- filter(t_indices, start == top_of_data)
     ## check if we want to look at data:
 
+    ## I marked any 'appropriate' tables with my name,
+    ## so if "Yoni" doesn't appear, but the table has been selected
+    ## let the user know it won't be used
     if (!any(grepl("Yoni", file[[1]][t_index$start:t_index$end], ignore.case = TRUE))){
         mess <- paste("pdf: ", pdf, "table:", tbl_ind,
                       "is not appropriate \n", sep = " ")
-        ##write(mess, file = "error.txt", append = TRUE)
+        ## write(mess, file = "error.txt", append = TRUE)
         stop(mess)
     }
     
@@ -418,6 +434,7 @@ ehf$getResponseTables <- function(row){
     colRanges <- ehf$getUnitColumnRange(file, unit_index, t_index,
                                         loc, unit_id, insect_id)
 
+    ## extract the table
     tble <- openxlsx::read.xlsx(gsub(".csv", ".xlsx", names(file)),
                       sheet = 1,
                       ##rowIndex = t_index$start:t_index$end,
@@ -425,6 +442,7 @@ ehf$getResponseTables <- function(row){
                       ##colIndex = colRanges$columns,
                       cols = colRanges$columns)
 
+    ## give it some useful attributes
     attr(tble, "info") <- colRanges[2:5]
     names(tble) <- make.names(names = names(tble), unique = TRUE, allow_ = TRUE)
     tble

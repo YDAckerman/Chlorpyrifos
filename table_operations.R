@@ -229,7 +229,7 @@ to$findNonEmptyCols <- function(df){
 ## deduce the number of days that passed between samples
 to$deduceDayCounts <- function(df, range){
 
-    measures <- c("DAT", "WAT")
+    measures <- c("DAT", "WAT", "mo")
     col_names <- colnames(df[, range])
     unit <- measures[sapply(measures, function(x){
         any(grepl(x, col_names, ignore.case = FALSE))
@@ -309,6 +309,10 @@ to$deduceStdError <- function(df, cols, range, days, method = "Fisher"){
     })))) {
         return(c(NA, NA))
     }
+
+    if(length(cols) != length(sg_cols)){
+        return(c(NA, NA))
+    }
     
     ## operate on each column
     stndEr <- ldply(seq_along(cols), function(i){
@@ -317,7 +321,7 @@ to$deduceStdError <- function(df, cols, range, days, method = "Fisher"){
         ## call multi function to get bounds
         ret <- to$multi(y.mean = vals, y.mrt = grps, method = method)
         data.frame(L = ret[1], U = ret[2])
-    })
+    }, .inform = TRUE)
 
     stndErAlt <- ldply(seq_along(cols), function(i){
             vals <- df[, cols[i]]

@@ -2,16 +2,18 @@
 ## Workflow to bring data from an excel file with multiple tables to R
 ## given a line in the CPYR dataset, I want to be able to locate and
 ## extract the raw insect data that corresponds to it into a df.
+## author: Yoni Ackerman
+## contact: jdackerma@ucdavis.edu
 ############################################################
 
 library(openxlsx)
-library(dplyr)
-library(plyr)
+library(plyr); library(dplyr)
 library(digest)
+library(stringdist)
 
-source("~/Documents/ZhangLab/R/Chlorpyrifos/export_helper_funs.R")
+source("export_helper_funs.R")
 
-## there are additional data files that need to be added
+## Read in the following datasets, renaming columns as necessary
 dat <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-allCpyr-withAI.csv",
                 stringsAsFactors = FALSE, na.strings = c("", "???"))
 
@@ -21,37 +23,56 @@ dat1 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-Mike.csv",
 dat2 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Jess.csv",
                 stringsAsFactors = FALSE, na.strings = c("", "???"))
 
+dat3 <- read.csv("~/Dropbox/ZhangLabData/ExcelData/Data-TwoMoreCPYR.csv",
+                 stringsAsFactors = FALSE, na.strings = c("", "???")) %>%
+    dplyr::rename(
+        Source..Fig.or.Table.number. = Data.source,
+        Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf.. = Measured.endpoint.or.pest.units,
+        Life.stage.tested..if.stated..egg..larva..pupa..adult. = Life.stage..if.applicable.,
+        Pest..as..common.name..scientific.name...if.both.given..if.not.just.enter.which.is.stated.in.article. = Pest.pathogn.name,
+        Year = Study.year
+        )
+
+## list of the 'raw' data files
 input_files <- c("~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-Oct2014-Raw.csv",   
                 "~/Dropbox/ZhangLabData/ExcelData/Data-FromSunny-23Sep-Raw.csv",
                  "~/Dropbox/ZhangLabData/ExcelData/Data-Katy-Cpyr-All-Raw.csv",
-                 "~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-MikeRaw.csv")
+                 "~/Dropbox/ZhangLabData/ExcelData/Data-Cpyr-May2015-MikeRaw.csv",
+                 "~/Dropbox/ZhangLabData/ExcelData/Data-TwoMoreCPYR-raw.csv"
+                 )
 
 ## get all pdf names from the data set
-pdfs <- as.list(unique(unlist(llply(list(dat, dat1, dat2), function(d){
+pdfs <- as.list(unique(unlist(llply(list(dat, dat1, dat2, dat3), function(d){
     d$PDF.file.name
 }))))
 
 names(pdfs) <- unlist(pdfs)
 
-## read lines from each file
+## read in the lines from each file
 files <- llply(input_files, readLines)
 names(files) <- input_files
 
-pdfs_in_file_not_in_dataset <- setdiff(unlist(llply(files, function(file){
-    tmp <- setdiff(unlist(llply(file, function(line){
-        unlist(strsplit(line, ";"))[1]
-    })), "")
-    tmp <- tmp[!hf$mgrepl(c("table", "skip"), tmp, ignore.case = TRUE)]
-    tmp <- tmp[!(tmp %in% as.character(1:21))]
-})), pdfs)
+## find any pdfs in the raw file that are not represented
+## in any rows of the dataset.
+pdfs_in_file_not_in_dataset <- setdiff(
+    unlist(
+        llply(files, function(file){
+            tmp <- setdiff(unlist(llply(file, function(line){
+                unlist(strsplit(line, ";"))[1]
+            })), "")
+            tmp <- tmp[!hf$mgrepl(c("table", "skip"), tmp, ignore.case = TRUE)]
+            tmp <- tmp[!(tmp %in% as.character(1:21))]
+        })), pdfs)
 
+## build a dataframe that suggests closes matches between pdf names
+## in the 'main' datasets and the 'raw' data sets.
 convPDFS <- ldply(pdfs_in_file_not_in_dataset, function(x){
     file <- names(files)[unlist(llply(files, function(f) {grepl(x,paste(f, collapse = " "))}))]
     data.frame(o = x,
-               n = unlist(pdfs)[which.min(stringdist(x, pdfs))],
+               n = unlist(pdfs)[which.min(stringdist(x, names(pdfs)))],
                file = file,
                stringsAsFactors = FALSE)
-})
+}, .inform = TRUE)
 
 ## see which files contain info for which pdfs
 pdf_locs_in_files <- llply(files, function(file){
@@ -64,19 +85,6 @@ pdf_locs_in_files <- llply(files, function(file){
         if (length(i) > 1){ stop(paste("pdf appears too many times", pdf, sep = ": "))} else {i}
     }) })
 
-
-## dat <- dat %>%
-##     dplyr::filter( Entered.by == "Jerry") %>%
-## dplyr::select( PDF.file.name,
-##               Source..Fig.or.Table.number.,
-##               Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..,
-##               Life.stage.tested..if.stated..egg..larva..pupa..adult.,
-##               Locality,
-##               Pest..as..common.name..scientific.name...if.both.given..if.not.just.enter.which.is.stated.in.article.)
-
-## pdfs <- unique(dat_proxy$PDF.file.name)
-## pdfs <- as.list(pdfs)
-## names(pdfs) <- unique(dat_proxy$PDF.file.name)
 
 ## these are the files in which we can find pdfs:
 pdfs_to_file <- llply(pdfs, function(pdf){
@@ -91,11 +99,8 @@ pdfs_to_file <- llply(pdfs, function(pdf){
 pdfs_in_dataset_not_in_file <- names(pdfs_to_file[which(is.na(pdfs_to_file))])
 
 
-## dat <- unique(dat)
-
-## dat_proxy <- filter(dat_proxy, PDF.file.name == "AMT32-D04")
-## dat_proxy <- dplyr::sample_n(dat_proxy, 30)
-
+## the following are the column names (common to each dataset) that
+## we'll need to accurately extract the data from the raw file:
 group_cols <- c("PDF.file.name",
                 "Source..Fig.or.Table.number.",
                 "Pest.units..e.g....percent.eggs.hatched..or..larvae.per.leaf..",
@@ -105,11 +110,18 @@ group_cols <- c("PDF.file.name",
                 "Year",
                 "Number.of.replicates")
 
-## test getResponseTables on subset
+## abbreviate the main function as f
 f <- ehf$getResponseTables
+
+## create an environment to contain all of the tables we extract
+## from the 'raw' files
 response_tables <- new.env()
 
-response_tables_lookup <- ldply(list(dat, dat1, dat2), function(d) {
+## loop through each dataset, and each combination of the above
+## group columns in each data set. Use the unique group columns
+## from each iteration to extract the relevant table from the raw
+## data sheet.
+response_tables_lookup <- ldply(list(dat, dat1, dat2, dat3), function(d) {
     ddply(d, group_cols,
           function(x){
               row <- unique(x[, group_cols])
@@ -127,9 +139,15 @@ response_tables_lookup <- ldply(list(dat, dat1, dat2), function(d) {
           .inform = FALSE,
           .progress = "text")})
 
-## clean up the mess
+## remove all trash from global environment so that this can
+## be run as a script without cluttering up the workspace
 rm(list = setdiff(ls(), c("response_tables", "response_tables_lookup")))
 
-save(response_tables, response_tables_lookup, file = "~/Dropbox/ZhangLabData/response_data.rda")
+## save the extracted data:
+## response_tables: a list linking an id string (V1) to a data table
+##                  extracted from the raw file.
+## response_tables_lookup: a dataframe linking the group columns to the id string
+##                         assigned to the table they correspond to.
+## save(response_tables, response_tables_lookup, file = "~/Dropbox/ZhangLabData/response_data.rda")
 ############################################################
 ############################################################
